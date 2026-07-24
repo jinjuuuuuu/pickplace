@@ -18,12 +18,12 @@ except ImportError:
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # === 설정 ===================================================================
-REPO_ID     = "jamongsteak/pickplace_vision"  
+REPO_ID     = "jamongsteak/pickplace_vision_v5"   # convert_to_lerobot.py의 REPO_ID와 일치시킬 것
 SAVE_PATH   = "bc_policy_vision_resnet_stacked.pt"  # 헷갈리지 않게 이름 변경
 
-CHUNK_H     = 60          
-PROPRIO_DIM = 18          
-IMG_SIZE    = 84          
+CHUNK_H     = 60
+PROPRIO_DIM = 9           # observation.state = joint_pos(9)만. convert_to_lerobot.py의 PROPRIO_DIM과 일치
+IMG_SIZE    = 84
 EPOCHS      = 200
 BATCH_SIZE  = 64
 LR          = 1e-3
@@ -45,6 +45,12 @@ N = len(lerobot_dataset)
 states = np.asarray(hf_dataset["observation.state"])
 actions = np.asarray(hf_dataset["action"])
 ep_indices = np.asarray(hf_dataset["episode_index"])
+
+# 🔒 안전장치: 데이터셋의 실제 상태 차원과 PROPRIO_DIM이 다르면 즉시 중단
+# (조용한 차원 불일치로 학습이 엉뚱하게 도는 것을 방지)
+assert states.shape[1] == PROPRIO_DIM, (
+    f"PROPRIO_DIM({PROPRIO_DIM})와 데이터셋 observation.state 차원"
+    f"({states.shape[1]})이 다릅니다. 설정을 데이터에 맞추세요.")
 
 pro_mean, pro_std = states.mean(0), states.std(0) + 1e-6
 act_mean, act_std = actions.mean(0), actions.std(0) + 1e-6
