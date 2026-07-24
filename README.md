@@ -129,7 +129,7 @@ flowchart LR
 
 <br>
 
-**🧩 `bc_train_vision_resnet18.py` 그대로 재사용 금지**
-`REPO_ID`가 옛 데이터셋(`jamongsteak/pickplace_vision`), `PROPRIO_DIM=18`(구 스펙)로 하드코딩됨.
-현재 변환 스크립트는 `PROPRIO_DIM=9`(joint_pos만)이므로, BC 경로를 다시 쓰려면 두 값을 먼저 맞춰야 함.
-지금은 ACT에 집중하느라 보류.
+**🧩 `bc_train_vision_resnet18.py` — ✅ 수정 완료, 재사용 가능**
+이전엔 `REPO_ID`가 옛 데이터셋(`jamongsteak/pickplace_vision`), `PROPRIO_DIM=18`(구 스펙)로 하드코딩되어 현재 데이터(`PROPRIO_DIM=9`, joint_pos만)와 맞지 않았음.
+→ `REPO_ID`를 `jamongsteak/pickplace_vision_v5`로, `PROPRIO_DIM`을 `9`로 맞췄고, 차원 불일치 시 즉시 중단하는 `assert` 안전장치도 추가함.
+현재는 ACT(`lerobot-train`)에 집중하지만, 이 BC 경로도 이제 그대로 실행 가능.
