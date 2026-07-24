@@ -1,0 +1,47 @@
+# ===== 대용량 데이터 (git에 올리지 않음, 워크스테이션/HF에서 관리) =====
+bc_data_v3/
+bc_data_v4/
+bc_data_v5/
+bc_data_*/
+outputs/
+runs/
+eval_results/
+vid_frames/
+사진, 영상/
+
+# ===== 모델 / 체크포인트 =====
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# ===== 이미지 / 영상 =====
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+*.mkv
+
+# ===== 로그 =====
+*.log
+*_log*.txt
+*_verbose_log.txt
+
+# ===== 데이터 파일 =====
+*.npz
+*.npy
+*.parquet
+*.mcap
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.ipynb_checkpoints/
+
+# ===== 로컬 설정 / 캐시 =====
+.claude/
+.DS_Store
