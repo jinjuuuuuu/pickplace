@@ -13,8 +13,8 @@ import os, glob, numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # ---- 설정 ----
-# 방금 수집한 v6 데이터 폴더로 경로 업데이트!
-SRC     = "/mnt/c/Users/user/Desktop/claude_jetbot/bc_data_v5"
+# 워크스테이션(Linux) 수집 데이터 폴더. pick_place_collect.py의 SAVE_PATH와 동일해야 함
+SRC     = "/data/jinju/bc_data_v5"
 REPO_ID = "jamongsteak/pickplace_vision_v5"   
 FPS     = 30
 TASK    = "pick up the cube and place it on the target"

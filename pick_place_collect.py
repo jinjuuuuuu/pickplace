@@ -17,7 +17,7 @@ MAX_STEPS       = 2000
 HEADLESS        = True
 RENDER          = True
 ISAACSIM_PATH   = r"C:\isaacsim"
-SAVE_PATH       = r"C:\Users\user\Desktop\claude_jetbot\bc_data_v5"
+SAVE_PATH       = r"/data/jinju/bc_data_v5"
 
 FRANKA_USD      = r"C:\Users\user\Desktop\isaacsim\isaac-sim-assets-robots_and_sensors-5.1.0\Assets\Isaac\5.1\Isaac\Robots\FrankaRobotics\FrankaPanda\franka.usd"
 
