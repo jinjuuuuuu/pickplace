@@ -83,7 +83,58 @@ def build_cube_schedule():
     random.shuffle(schedule)
     return schedule
 
-CUBE_SCHEDULE = build_cube_schedule()
+# ---------------------------------------------------------------------------
+# 이어받기(RESUME): SAVE_PATH에 이미 수집된 episode_*.npz가 있으면,
+# 각 파일의 cube_pos를 읽어 격자점별 수집량을 세고, EPISODES_PER_POINT에 못 미치는
+# 만큼만 이어서 채운다. (VPN/SSH 끊김 등으로 중간에 멈춰도 처음부터 다시 안 돌림)
+# 기존 파일이 없으면 평소처럼 전체 스케줄을 새로 만든다.
+# ---------------------------------------------------------------------------
+def _grid_points():
+    xs = np.linspace(CUBE_X_RANGE[0], CUBE_X_RANGE[1], CUBE_GRID_NX)
+    ys = np.linspace(CUBE_Y_RANGE[0], CUBE_Y_RANGE[1], CUBE_GRID_NY)
+    return [(float(x), float(y)) for x in xs for y in ys]
+
+def _nearest_point_idx(xy, pts):
+    return min(range(len(pts)),
+               key=lambda i: (pts[i][0] - xy[0]) ** 2 + (pts[i][1] - xy[1]) ** 2)
+
+def build_resume_schedule():
+    """반환: (schedule, save_offset).
+    기존 파일이 없으면 (전체 새 스케줄, 0). 있으면 (부족분 스케줄, 이어붙일 시작 인덱스)."""
+    import glob as _glob
+    files = sorted(_glob.glob(os.path.join(SAVE_PATH, "episode_*.npz")))
+    if not files:
+        return build_cube_schedule(), 0
+
+    pts = _grid_points()
+    counts = [0] * len(pts)
+    max_idx = -1
+    for f in files:
+        try:
+            with np.load(f) as d:
+                cp = d["cube_pos"]
+            counts[_nearest_point_idx((float(cp[0]), float(cp[1])), pts)] += 1
+        except Exception as e:
+            print(f"[resume] 경고: {os.path.basename(f)} 읽기 실패({e}) — 집계에서 제외")
+        try:
+            n = int(os.path.basename(f).split("_")[1].split(".")[0])
+            max_idx = max(max_idx, n)
+        except Exception:
+            pass
+
+    deficit = []
+    for i, p in enumerate(pts):
+        deficit += [p] * max(0, EPISODES_PER_POINT - counts[i])
+    random.shuffle(deficit)
+
+    print(f"[resume] 기존 파일 {len(files)}개 발견. 격자점별 수집량(목표 {EPISODES_PER_POINT}):")
+    for i, p in enumerate(pts):
+        mark = "" if counts[i] >= EPISODES_PER_POINT else f"  → {EPISODES_PER_POINT - counts[i]}개 부족"
+        print(f"[resume]   점{i:2d} ({p[0]:+.3f},{p[1]:+.3f}): {counts[i]:2d}{mark}")
+    print(f"[resume] => 추가 수집 {len(deficit)}개 | 저장 인덱스 {max_idx + 1}부터 (기존 파일 보존)")
+    return deficit, max_idx + 1
+
+CUBE_SCHEDULE, SAVE_INDEX_OFFSET = build_resume_schedule()
 NUM_EPISODES  = len(CUBE_SCHEDULE)
 
 def sample_positions(ep):
@@ -370,24 +421,34 @@ for ep in range(NUM_EPISODES):
     if RECORD_IMAGES:
         save_data["images_wrist"] = np.array(ep_wrist, dtype=np.uint8)
         save_data["images_over"]  = np.array(ep_over,  dtype=np.uint8)
-    ep_save_path = os.path.join(SAVE_PATH, f"episode_{ep:04d}.npz")
+    ep_save_path = os.path.join(SAVE_PATH, f"episode_{ep + SAVE_INDEX_OFFSET:04d}.npz")
     np.savez_compressed(ep_save_path, **save_data)
 
 if len(all_episodes) == 0:
+    if SAVE_INDEX_OFFSET > 0:
+        print("\n[resume] 새로 수집한 에피소드가 없습니다 "
+              "(모든 격자점이 이미 목표치를 채웠거나 이번 회차가 전부 드롭됨).")
+        import omni.replicator.core as rep
+        rep.orchestrator.stop()
+        simulation_app.close()
+        sys.exit(0)
     print("\n[collect] 치명적 오류: 성공한 에피소드가 없습니다.")
     import omni.replicator.core as rep
     rep.orchestrator.stop()
     simulation_app.close()
     sys.exit(1)
 
-all_obs = np.concatenate([ep["obs"] for ep in all_episodes], axis=0)
-all_actions = np.concatenate([ep["actions"] for ep in all_episodes], axis=0)
-ep_lengths = [len(ep["obs"]) for ep in all_episodes]
-episode_starts = np.cumsum([0] + ep_lengths[:-1]).astype(np.int64)
+# 병합 파일(bc_dataset.npz)은 변환 파이프라인에서 사용하지 않고(convert는 episode_*.npz만 읽음),
+# 이어받기 시에는 이번 회차분만 담겨 기존 병합본을 덮어쓰게 되므로 '새 수집'일 때만 기록한다.
+if SAVE_INDEX_OFFSET == 0:
+    all_obs = np.concatenate([ep["obs"] for ep in all_episodes], axis=0)
+    all_actions = np.concatenate([ep["actions"] for ep in all_episodes], axis=0)
+    ep_lengths = [len(ep["obs"]) for ep in all_episodes]
+    episode_starts = np.cumsum([0] + ep_lengths[:-1]).astype(np.int64)
 
-merged_path = os.path.join(SAVE_PATH, "bc_dataset.npz")
-np.savez(merged_path, obs=all_obs, actions=all_actions, episode_starts=episode_starts,
-         start_pose=np.array(START_POSE, dtype=np.float32), use_delta=np.array([0], dtype=np.int32))
+    merged_path = os.path.join(SAVE_PATH, "bc_dataset.npz")
+    np.savez(merged_path, obs=all_obs, actions=all_actions, episode_starts=episode_starts,
+             start_pose=np.array(START_POSE, dtype=np.float32), use_delta=np.array([0], dtype=np.int32))
 
 print(f"[collect] 저장 완료! (에피소드 {len(all_episodes)}개)")
 import omni.replicator.core as rep
