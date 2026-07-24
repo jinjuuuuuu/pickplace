@@ -4,11 +4,20 @@
 # NVIDIA Container Toolkit 설치 + Docker GPU 연동 구성 + 검증
 #
 # 전제: Docker Engine은 이미 설치돼 있음. Ubuntu, sudo(관리자) 권한 필요.
-# 사용법:
-#   cd ~/pickplace && git pull
-#   bash setup/setup_docker_nvidia.sh
+#
+# ⚠️ 시스템 전역 설치라 반드시 sudo 되는 관리자 계정(예: tta)에서 실행하세요.
+#    sudo 없는 작업 계정(예: hjinju828)에서 돌리면 'not in sudoers'로 막힙니다.
+#
+# 사용법 (관리자 계정에서):
+#   # docker 권한을 줄 '작업 계정'을 첫 인자로 전달 (없으면 현재 계정)
+#   sudo bash /home/hjinju828/pickplace/setup/setup_docker_nvidia.sh hjinju828
 # ---------------------------------------------------------------------------
 set -eu
+
+# docker 그룹에 추가할 작업 계정 (sudo 없이 docker 쓰게 할 대상).
+# 첫 번째 인자로 지정. 예) ... setup_docker_nvidia.sh hjinju828
+# 인자 없으면 현재 계정을 사용 (단, root/sudo로 실행 시엔 명시 권장).
+DOCKER_USER="${1:-${SUDO_USER:-$USER}}"
 
 echo "==> [0/5] 사전 확인"
 if ! command -v docker >/dev/null 2>&1; then
@@ -38,9 +47,9 @@ echo "==> [3/5] Docker 런타임에 NVIDIA 연동 구성 + 재시작"
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 
-echo "==> [4/5] 현재 사용자($USER)를 docker 그룹에 추가 (sudo 없이 docker 쓰려면)"
-sudo usermod -aG docker "$USER"
-echo "   ※ 그룹 반영은 '재로그인' 또는 'newgrp docker' 후 적용됩니다."
+echo "==> [4/5] 작업 계정 '$DOCKER_USER'를 docker 그룹에 추가 (sudo 없이 docker 쓰게)"
+sudo usermod -aG docker "$DOCKER_USER"
+echo "   ※ '$DOCKER_USER' 계정으로 재로그인해야 그룹이 적용됩니다 (newgrp docker 도 가능)."
 
 echo "==> [5/5] GPU 연동 검증 (CUDA 베이스 이미지에서 nvidia-smi 실행)"
 echo "   이미지를 처음 받으면 다운로드에 시간이 걸립니다..."
