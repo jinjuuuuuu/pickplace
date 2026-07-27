@@ -31,8 +31,17 @@ PORT = 5555
 import torch
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
-from lerobot.utils.control_utils import predict_action
-from lerobot.utils.utils import get_safe_torch_device
+
+# predict_action / get_safe_torch_device 의 모듈 위치가 lerobot 배포판마다 다르다.
+# 워크스테이션의 /data/lerobot(0.6.1 fork)은 common/, 공식 0.6.1은 utils/ 쪽이다.
+try:
+    from lerobot.common.control_utils import predict_action
+except ImportError:
+    from lerobot.utils.control_utils import predict_action
+try:
+    from lerobot.utils.utils import get_safe_torch_device
+except ImportError:
+    from lerobot.common.utils.utils import get_safe_torch_device
 
 
 def send_msg(sock, obj):
