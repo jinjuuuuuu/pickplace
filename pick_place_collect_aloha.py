@@ -26,66 +26,47 @@
 #
 # 실행(워크스테이션):  /data/isaacsim/python.sh pick_place_collect_aloha.py
 # === 설정 ===================================================================
+# 카메라/해상도/조명/영역 값은 scene_config.py 한 곳에만 둔다. 예전엔 이 파일과
+# eval_act_v5_client.py에 각각 복사돼 있었고 실제로 어긋나서(조명 1500 vs 1000)
+# 정책이 학습한 적 없는 이미지로 평가됐다.
+from scene_config import (
+    IMG_W, IMG_H, WRIST_CAM_PRIM, OVER_CAM_PRIM,
+    CAM_H_APERTURE, CAM_V_APERTURE, CAM_CLIP_NEAR, CAM_CLIP_FAR,
+    WRIST_FOCAL, WRIST_TRANSLATE, WRIST_ROTATE,
+    OVER_FOCAL, OVER_TRANSLATE, OVER_ROTATE,
+    LIGHT_INTENSITY, CUBE_COLOR, CUBE_SIZE, CUBE_MASS, CUBE_Z, TARGET_Z,
+    TARGET_FIXED_XY, TARGET_JITTER, CUBE_X_RANGE, CUBE_Y_RANGE, MIN_DISTANCE,
+    START_POSE, SUCCESS_XY_TOL, SUCCESS_MIN_LIFT,
+)
+
 MAX_STEPS       = 2000
 HEADLESS        = True
 RENDER          = True
-ISAACSIM_PATH   = r"C:\isaacsim"
-SAVE_PATH       = r"/data/jinju/bc_data_v9"
+SAVE_PATH       = r"/data/jinju/bc_data_v10"
 
-FRANKA_USD      = r"C:\Users\user\Desktop\isaacsim\isaac-sim-assets-robots_and_sensors-5.1.0\Assets\Isaac\5.1\Isaac\Robots\FrankaRobotics\FrankaPanda\franka.usd"
-
-CUBE_Z = 0.025; TARGET_Z = 0.025
 PLACE_Z_OFFSET  = 0.02
 WARMUP_STEPS    = 200
 
 # ---- ALOHA 표준 세팅 (v9의 핵심) ------------------------------------------
 NUM_EPISODES  = 50           # ALOHA 표준 규모
 
-# 큐브 시작 위치: 매 에피소드 연속 랜덤. 이게 있어야 일반화가 된다.
-#   ALOHA sim의 랜덤 영역과 같은 20x20cm로 맞췄다(이전 25x50cm의 1/3 면적 →
-#   에피소드 수를 안 늘리고도 위치당 밀도가 3배). 중심은 (0.425, 0.150).
-#   y를 전부 양수로 잡은 이유: 목표가 (0.500,-0.150)이라 MIN_DISTANCE=0.15를
-#   영역 "전체"가 만족해야 사각형이 깎이지 않는다. 이 영역의 목표까지 최소
-#   거리는 0.200m. 대신 반대쪽(y<0)에서 집는 건 배우지 못한다.
-#   베이스에서 가장 먼 모서리가 0.581m → Franka 도달 범위(~0.85m) 안.
-CUBE_X_RANGE  = (0.325, 0.525)
-CUBE_Y_RANGE  = (0.05, 0.25)
-
-# 놓을 지점: **고정**. ALOHA sim_transfer_cube가 fixed bin인 것과 같다.
-# 값은 평가 하네스(eval_act_v5_client.py의 TARGET_POS)와 동일하게 맞췄다.
-# 여기가 어긋나면 학습한 태스크와 평가하는 태스크가 달라진다.
-TARGET_FIXED_XY = (0.500, -0.150)
-TARGET_JITTER   = 0.005   # ±5mm. 0으로 두면 완전 고정.
-
-MIN_DISTANCE  = 0.15      # 큐브가 목표에 너무 붙으면 태스크가 성립 안 함
-
 # 도메인 랜덤화. v8은 매 에피소드 큐브 색을 완전 랜덤 RGB로 바꿨는데, ALOHA
 # 표준 세팅에는 그런 게 없다. 50개로 색까지 배우게 하면 부담이 크므로 끈다.
 # 성공률이 올라온 뒤에 다시 켜서 강건성을 본다.
 DOMAIN_RANDOMIZE = False
-CUBE_COLOR       = (0.8, 0.2, 0.1)   # 고정 색(빨강)
-LIGHT_INTENSITY  = 1500.0            # 고정 조명
 
-START_POSE = [0.0, -0.3, 0.0, -2.5, 0.0, 2.2, 0.8, 0.04, 0.04]
-START_SETTLE_STEPS = 60   
-USE_START_POSE = True     
+START_SETTLE_STEPS = 60
+USE_START_POSE = True
 RECORD_RETREAT     = True
-RETREAT_LIFT_STEPS = 50    
-RETREAT_HOME_STEPS = 100   
+RETREAT_LIFT_STEPS = 50
+RETREAT_HOME_STEPS = 100
 
 RECORD_IMAGES = True
-IMG_W, IMG_H = 160, 120                
-
-SUCCESS_XY_TOL   = 0.05
-SUCCESS_MIN_LIFT = 0.04
 
 ENABLE_SMOOTHNESS_FILTER = True
-MAX_JOINT_STEP_JUMP      = 0.30   
-MAX_JOINT_VEL            = 25.0   
-MAX_EE_DETOUR            = 1.8     
-
-WRIST_CAM_PRIM = "/World/Franka/panda_hand/WristCam/Camera"
-OVER_CAM_PRIM  = "/World/OverheadCam/Camera"
+MAX_JOINT_STEP_JUMP      = 0.30
+MAX_JOINT_VEL            = 25.0
+MAX_EE_DETOUR            = 1.8
 # =============================================================================
 
 import os, sys, random
@@ -165,8 +146,8 @@ def build_scene():
 
     cube = world.scene.add(DynamicCuboid(
         prim_path="/World/PickCube", name="pick_cube",
-        position=np.array([0.45, 0.0, CUBE_Z]), size=0.05,
-        color=np.array([0.8, 0.2, 0.1]), mass=0.1
+        position=np.array([0.45, 0.0, CUBE_Z]), size=CUBE_SIZE,
+        color=np.array(CUBE_COLOR), mass=CUBE_MASS
     ))
 
     marker_prim = stage.DefinePrim("/World/PlaceMarker", "Cylinder")
@@ -177,21 +158,21 @@ def build_scene():
     ee_path = "/World/Franka/panda_hand"
     wrist_xform = stage.DefinePrim(ee_path + "/WristCam", "Xform")
     wrist_cam = UsdGeom.Camera.Define(stage, WRIST_CAM_PRIM)
-    wrist_cam.GetFocalLengthAttr().Set(16.0)   
-    wrist_cam.GetHorizontalApertureAttr().Set(20.955)
-    wrist_cam.GetVerticalApertureAttr().Set(15.716)
-    wrist_cam.GetClippingRangeAttr().Set(Gf.Vec2f(0.05, 100.0))  
-    UsdGeom.XformCommonAPI(wrist_xform).SetTranslate(Gf.Vec3d(0.15, 0.0, 0.0)) 
-    UsdGeom.XformCommonAPI(wrist_xform).SetRotate(Gf.Vec3f(-45, 179.9, -89.9))
+    wrist_cam.GetFocalLengthAttr().Set(WRIST_FOCAL)
+    wrist_cam.GetHorizontalApertureAttr().Set(CAM_H_APERTURE)
+    wrist_cam.GetVerticalApertureAttr().Set(CAM_V_APERTURE)
+    wrist_cam.GetClippingRangeAttr().Set(Gf.Vec2f(CAM_CLIP_NEAR, CAM_CLIP_FAR))
+    UsdGeom.XformCommonAPI(wrist_xform).SetTranslate(Gf.Vec3d(*WRIST_TRANSLATE))
+    UsdGeom.XformCommonAPI(wrist_xform).SetRotate(Gf.Vec3f(*WRIST_ROTATE))
 
     over_xform = stage.DefinePrim("/World/OverheadCam", "Xform")
     over_cam = UsdGeom.Camera.Define(stage, OVER_CAM_PRIM)
-    over_cam.GetFocalLengthAttr().Set(24.0)
-    over_cam.GetHorizontalApertureAttr().Set(20.955)
-    over_cam.GetVerticalApertureAttr().Set(15.716)
-    over_cam.GetClippingRangeAttr().Set(Gf.Vec2f(0.05, 100.0))
-    UsdGeom.XformCommonAPI(over_xform).SetTranslate(Gf.Vec3d(0.4, 0.0, 1.5))
-    UsdGeom.XformCommonAPI(over_xform).SetRotate(Gf.Vec3f(0.0, 0.0, -89.9))
+    over_cam.GetFocalLengthAttr().Set(OVER_FOCAL)
+    over_cam.GetHorizontalApertureAttr().Set(CAM_H_APERTURE)
+    over_cam.GetVerticalApertureAttr().Set(CAM_V_APERTURE)
+    over_cam.GetClippingRangeAttr().Set(Gf.Vec2f(CAM_CLIP_NEAR, CAM_CLIP_FAR))
+    UsdGeom.XformCommonAPI(over_xform).SetTranslate(Gf.Vec3d(*OVER_TRANSLATE))
+    UsdGeom.XformCommonAPI(over_xform).SetRotate(Gf.Vec3f(*OVER_ROTATE))
 
     for _ in range(50):
         simulation_app.update()

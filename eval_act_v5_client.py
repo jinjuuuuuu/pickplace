@@ -40,7 +40,7 @@ MAX_STEPS = 1500
 ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", "1")))
 
 # 학습 데이터의 그리퍼 값은 0.025(닫힘)/0.04(열림) 두 가지뿐이다
-# (pick_place_collect.py에서 강제 이진화). ACT는 회귀 모델이라 그 사이의 값을
+# (pick_place_collect_aloha.py에서 강제 이진화). ACT는 회귀 모델이라 그 사이 값을
 # 내놓는데, 큐브가 5cm라 손가락이 0.025보다 조금만 벌어져도 아예 못 잡는다.
 # 그래서 수집 때와 동일하게 이진화해서 명령한다. 끄려면 GRIPPER_BINARIZE=0.
 GRIPPER_BINARIZE = os.environ.get("GRIPPER_BINARIZE", "1") != "0"
@@ -56,28 +56,29 @@ def binarize_gripper(cmd):
     closing = float(np.mean(cmd[7:9])) < GRIPPER_MID
     cmd[7:9] = GRIPPER_CLOSED if closing else GRIPPER_OPEN
     return cmd
-IMG_W, IMG_H = 160, 120
+# 씬 설정(카메라·해상도·조명·영역·평가 격자)은 scene_config.py 한 곳에서만
+# 온다. 수집 스크립트도 같은 파일을 읽으므로 두 씬이 어긋날 수 없다.
+from scene_config import (
+    IMG_W, IMG_H, WRIST_CAM_PRIM, OVER_CAM_PRIM,
+    CAM_H_APERTURE, CAM_V_APERTURE, CAM_CLIP_NEAR, CAM_CLIP_FAR,
+    WRIST_FOCAL, WRIST_TRANSLATE, WRIST_ROTATE,
+    OVER_FOCAL, OVER_TRANSLATE, OVER_ROTATE,
+    LIGHT_INTENSITY, CUBE_COLOR, CUBE_SIZE, CUBE_MASS, CUBE_Z,
+    TARGET_FIXED_XY, TARGET_Z, START_POSE,
+    SUCCESS_XY_TOL, SUCCESS_MIN_LIFT, EVAL_CUBE_XY_LIST,
+)
 
-TARGET_POS = [0.50, -0.15, 0.025]
-START_POSE = [0.0, -0.3, 0.0, -2.5, 0.0, 2.2, 0.8, 0.04, 0.04]
+TARGET_POS = [TARGET_FIXED_XY[0], TARGET_FIXED_XY[1], TARGET_Z]
 
-SUCCESS_XY_TOL = 0.05
-SUCCESS_MIN_LIFT = 0.04
+# 학습 영역을 고르게 덮는 4x4 격자. scene_config가 CUBE_*_RANGE에서 계산하므로
+# 영역을 바꾸면 평가 위치도 따라온다 — 예전엔 손으로 맞춰야 해서 15개 중 8개가
+# 학습 영역 밖이었다(학습한 적 없는 곳이라 무조건 실패).
+# 학습은 연속 랜덤이므로 이 16개는 전부 "처음 보는 정확한 좌표"다.
+CUBE_XY_LIST = list(EVAL_CUBE_XY_LIST)
 
-# 학습 영역(pick_place_collect_aloha.py: x 0.325~0.525, y 0.05~0.25)을 고르게
-# 덮는 4x4 격자 16개. 예전 v4용 15개 목록은 새 영역 밖 8개가 섞여 있어서 폐기
-# 했다(학습한 적 없는 곳이라 무조건 실패). 학습은 연속 랜덤이므로 이 16개는
-# 전부 "처음 보는 정확한 좌표" → 격자여도 일반화 테스트로 성립한다.
-CUBE_XY_LIST = [
-    (0.325, 0.050), (0.325, 0.117), (0.325, 0.183), (0.325, 0.250),
-    (0.392, 0.050), (0.392, 0.117), (0.392, 0.183), (0.392, 0.250),
-    (0.458, 0.050), (0.458, 0.117), (0.458, 0.183), (0.458, 0.250),
-    (0.525, 0.050), (0.525, 0.117), (0.525, 0.183), (0.525, 0.250),
-]
-
-# 고정 태스크(pick_place_collect_fixed.py)로 학습한 모델을 평가할 때는, 학습한
-# 그 지점에서 재봐야 의미가 있다. FIXED_CUBE로 큐브 위치를, N_EPISODES로 반복
-# 횟수를 지정하면 위 15개 목록 대신 그 지점만 반복 평가한다.
+# 고정 지점으로 학습한 모델을 평가할 때는 학습한 그 지점에서 재봐야 의미가 있다.
+# FIXED_CUBE로 큐브 위치를, N_EPISODES로 반복 횟수를 지정하면 위 격자 대신
+# 그 지점만 반복 평가한다.
 #   FIXED_CUBE=0.425,0.125 N_EPISODES=10 ACTION_REPEAT=3 python.bat eval_act_v5_client.py
 _fixed = os.environ.get("FIXED_CUBE", "").strip()
 if _fixed:
@@ -172,8 +173,8 @@ franka = world.scene.add(Franka(prim_path="/World/Franka", name="franka"))
 
 cube = world.scene.add(DynamicCuboid(
     prim_path="/World/PickCube", name="pick_cube",
-    position=np.array([CUBE_XY_LIST[0][0], CUBE_XY_LIST[0][1], 0.025], dtype=float), size=0.05,
-    color=np.array([0.8, 0.2, 0.1]), mass=0.1))
+    position=np.array([CUBE_XY_LIST[0][0], CUBE_XY_LIST[0][1], CUBE_Z], dtype=float),
+    size=CUBE_SIZE, color=np.array(CUBE_COLOR), mass=CUBE_MASS))
 
 marker = stage.DefinePrim("/World/PlaceMarker", "Cylinder")
 UsdGeom.Cylinder(marker).GetRadiusAttr().Set(0.025)
@@ -184,27 +185,26 @@ UsdGeom.Gprim(marker).GetDisplayColorAttr().Set([Gf.Vec3f(0.1, 0.8, 0.1)])
 ee_path = "/World/Franka/panda_hand"
 wrist_xform = stage.DefinePrim(ee_path + "/WristCam", "Xform")
 wrist_cam_prim = UsdGeom.Camera.Define(stage, WRIST_CAM_PRIM)
-wrist_cam_prim.GetFocalLengthAttr().Set(16.0)
-wrist_cam_prim.GetHorizontalApertureAttr().Set(20.955)
-wrist_cam_prim.GetVerticalApertureAttr().Set(15.716)
-wrist_cam_prim.GetClippingRangeAttr().Set(Gf.Vec2f(0.05, 100.0))
-UsdGeom.XformCommonAPI(wrist_xform).SetTranslate(Gf.Vec3d(0.15, 0.0, 0.0))
-UsdGeom.XformCommonAPI(wrist_xform).SetRotate(Gf.Vec3f(-45, 179.9, -89.9))
+wrist_cam_prim.GetFocalLengthAttr().Set(WRIST_FOCAL)
+wrist_cam_prim.GetHorizontalApertureAttr().Set(CAM_H_APERTURE)
+wrist_cam_prim.GetVerticalApertureAttr().Set(CAM_V_APERTURE)
+wrist_cam_prim.GetClippingRangeAttr().Set(Gf.Vec2f(CAM_CLIP_NEAR, CAM_CLIP_FAR))
+UsdGeom.XformCommonAPI(wrist_xform).SetTranslate(Gf.Vec3d(*WRIST_TRANSLATE))
+UsdGeom.XformCommonAPI(wrist_xform).SetRotate(Gf.Vec3f(*WRIST_ROTATE))
 
 over_xform = stage.DefinePrim("/World/OverheadCam", "Xform")
 over_cam_prim = UsdGeom.Camera.Define(stage, OVER_CAM_PRIM)
-over_cam_prim.GetFocalLengthAttr().Set(24.0)
-over_cam_prim.GetHorizontalApertureAttr().Set(20.955)
-over_cam_prim.GetVerticalApertureAttr().Set(15.716)
-over_cam_prim.GetClippingRangeAttr().Set(Gf.Vec2f(0.05, 100.0))
-UsdGeom.XformCommonAPI(over_xform).SetTranslate(Gf.Vec3d(0.4, 0.0, 1.5))
-UsdGeom.XformCommonAPI(over_xform).SetRotate(Gf.Vec3f(0.0, 0.0, -89.9))
+over_cam_prim.GetFocalLengthAttr().Set(OVER_FOCAL)
+over_cam_prim.GetHorizontalApertureAttr().Set(CAM_H_APERTURE)
+over_cam_prim.GetVerticalApertureAttr().Set(CAM_V_APERTURE)
+over_cam_prim.GetClippingRangeAttr().Set(Gf.Vec2f(CAM_CLIP_NEAR, CAM_CLIP_FAR))
+UsdGeom.XformCommonAPI(over_xform).SetTranslate(Gf.Vec3d(*OVER_TRANSLATE))
+UsdGeom.XformCommonAPI(over_xform).SetRotate(Gf.Vec3f(*OVER_ROTATE))
 
+# 조명도 수집과 같은 값이어야 한다. 예전엔 여기가 1000, 수집이 1500이었다 —
+# DOMAIN_RANDOMIZE=False라 정책은 1500만 본 적이 있으므로 학습 분포 밖이었다.
 dome_light = UsdLux.DomeLight.Define(stage, "/World/DR_DomeLight")
-# ⚠ 수집 스크립트의 LIGHT_INTENSITY와 반드시 같아야 한다. 1000으로 하드코딩돼
-# 있었는데 수집은 1500이었다 — DOMAIN_RANDOMIZE=False라 정책은 1500 조명만 본
-# 적이 있으므로, 33% 어두운 이미지는 학습 분포 밖이다.
-dome_light.GetIntensityAttr().Set(1500.0)
+dome_light.GetIntensityAttr().Set(LIGHT_INTENSITY)
 
 for _ in range(50):
     simulation_app.update()
