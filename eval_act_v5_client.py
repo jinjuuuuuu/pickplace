@@ -303,6 +303,7 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
     # 큐브를 못 찾고 학습 데이터의 평균 궤적을 재생하고 있다는 뜻이다.
     min_ee_cube = None
     ee_at_close = None
+    cube_rel_at_close = None
 
     cmd = None
     for step in range(MAX_STEPS):
@@ -331,6 +332,9 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
         if jp[7] < 0.035:
             if ee_at_close is None:
                 ee_at_close = [round(float(ee[0]), 3), round(float(ee[1]), 3)]
+                # 수집 데이터의 obs[18:21](cube_rel = cube - ee)과 같은 양. z까지
+                # 봐야 한다 — XY가 맞아도 손이 큐브보다 높으면 허공을 잡는다.
+                cube_rel_at_close = [round(float(v), 4) for v in (gt_cube - ee)]
             grasp_attempted = True
         gripper_open = jp[7] > 0.035
 
@@ -345,10 +349,11 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
         "grasp_attempted": grasp_attempted,
         "min_ee_cube": round(float(min_ee_cube), 4) if min_ee_cube is not None else None,
         "ee_at_close": ee_at_close,
+        "cube_rel_at_close": cube_rel_at_close,
     })
     print(f"[client] ep {ep:2d} cube=({cx:.3f},{cy:.3f}) success={success} steps={final_step} "
           f"max_lift={max_lift:.3f} min_xy_err={min_xy_err:.3f} grasp_attempted={grasp_attempted} "
-          f"min_ee_cube={min_ee_cube:.3f} ee_at_close={ee_at_close}")
+          f"min_ee_cube={min_ee_cube:.3f} cube_rel_at_close={cube_rel_at_close}")
 
 n_success = sum(r["success"] for r in results)
 summary = {
