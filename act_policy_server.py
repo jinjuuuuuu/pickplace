@@ -28,6 +28,22 @@ TASK = "pick up the cube and place it on the target"
 HOST = "127.0.0.1"
 PORT = 5555
 
+# --- 폐루프 옵션 (둘 다 추론 시점 설정이라 재학습이 필요 없다) ----------------
+# 학습된 ACT는 chunk_size=100, n_action_steps=100이다. 즉 한 번 관측하고 100
+# 정책스텝을 개루프로 실행한다 — ACTION_REPEAT=3이면 300 시뮬스텝(5초)을 눈을
+# 감고 움직이는 셈이라, 파지 직전 마지막 몇 cm를 보정할 수 없다.
+#
+#   N_ACTION_STEPS=10        chunk 100개 중 10개만 쓰고 다시 관측 (0.5초마다 보정)
+#   TEMPORAL_ENSEMBLE=0.01   ACT 논문의 temporal aggregation. 매 스텝 다시 관측하고
+#                            겹치는 chunk들을 지수가중 평균한다 (n_action_steps=1 강제)
+#
+# 예:  TEMPORAL_ENSEMBLE=0.01 MODEL_PATH=... python act_policy_server.py
+# 둘 다 안 주면 학습 시 설정(개루프 100스텝) 그대로 돈다.
+_n_steps = os.environ.get("N_ACTION_STEPS", "").strip()
+N_ACTION_STEPS = int(_n_steps) if _n_steps else None
+_te = os.environ.get("TEMPORAL_ENSEMBLE", "").strip()
+TEMPORAL_ENSEMBLE = float(_te) if _te else None
+
 import torch
 from lerobot.policies.act.modeling_act import ACTPolicy
 from lerobot.policies.factory import make_pre_post_processors
@@ -74,11 +90,38 @@ if not os.path.isdir(MODEL_PATH):
         f"[server] 체크포인트 폴더가 없습니다: {MODEL_PATH}\n"
         f"  ls /data/jinju/act_pickplace_v5/checkpoints/  로 확인 후 MODEL_PATH 수정.")
 
-print(f"[server] loading v5 policy: {MODEL_PATH}")
+print(f"[server] loading policy: {MODEL_PATH}")
 policy = ACTPolicy.from_pretrained(MODEL_PATH)
 policy.config.device = "cuda" if torch.cuda.is_available() else "cpu"
 device = torch.device(policy.config.device)
+
+print(f"[server] 학습 시 설정: chunk_size={policy.config.chunk_size} "
+      f"n_action_steps={policy.config.n_action_steps} "
+      f"temporal_ensemble_coeff={policy.config.temporal_ensemble_coeff}")
+
+if TEMPORAL_ENSEMBLE is not None:
+    # ACTPolicy.__init__은 config를 보고 ensembler를 만든다. from_pretrained 이후에
+    # config만 바꿔도 ensembler가 없으므로 직접 붙여준다.
+    from lerobot.policies.act.modeling_act import ACTTemporalEnsembler
+    policy.config.n_action_steps = 1
+    policy.config.temporal_ensemble_coeff = TEMPORAL_ENSEMBLE
+    policy.temporal_ensembler = ACTTemporalEnsembler(TEMPORAL_ENSEMBLE, policy.config.chunk_size)
+    print(f"[server] → temporal ensembling ON (coeff={TEMPORAL_ENSEMBLE}, "
+          f"매 정책스텝마다 재관측)")
+elif N_ACTION_STEPS is not None:
+    if N_ACTION_STEPS > policy.config.chunk_size:
+        raise SystemExit(f"[server] N_ACTION_STEPS({N_ACTION_STEPS})는 "
+                         f"chunk_size({policy.config.chunk_size})를 넘을 수 없습니다")
+    policy.config.n_action_steps = N_ACTION_STEPS
+    print(f"[server] → n_action_steps={N_ACTION_STEPS} "
+          f"({N_ACTION_STEPS}스텝마다 재관측)")
+else:
+    print(f"[server] → 학습 시 설정 그대로 (개루프 "
+          f"{policy.config.n_action_steps}스텝). 폐루프로 바꾸려면 "
+          f"TEMPORAL_ENSEMBLE=0.01 또는 N_ACTION_STEPS=10")
+
 policy.to(device).eval()
+policy.reset()
 preprocessor, postprocessor = make_pre_post_processors(policy.config, pretrained_path=MODEL_PATH)
 print(f"[server] policy loaded. device={device}")
 
