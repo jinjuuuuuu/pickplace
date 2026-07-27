@@ -59,13 +59,20 @@ GRIPPER_BINARIZE = os.environ.get("GRIPPER_BINARIZE", "1") != "0"
 GRIPPER_CLOSED, GRIPPER_OPEN = 0.025, 0.04
 GRIPPER_MID = (GRIPPER_CLOSED + GRIPPER_OPEN) / 2.0   # 0.0325
 
+# 닫힘으로 판정하는 임계값. ACT는 0.04 -> 0.025로 부드럽게 내려오는 값을 내는데,
+# 중간값(0.0325)에서 닫으면 그 하강 구간의 절반 지점에 이미 완전히 닫힌다.
+# 손이 큐브에 닿기 전에 닫으면 닫힌 손으로 큐브를 스치기만 한다(측정: 16/16
+# 에피소드에서 닫은 지점이 최소접근 지점보다 평균 3.1cm 멀었다).
+# 값을 낮추면(예: 0.028) 더 확실히 닫으려 할 때까지 기다린다.
+GRIPPER_CLOSE_THRESH = float(os.environ.get("GRIPPER_CLOSE_THRESH", str(GRIPPER_MID)))
+
 
 def binarize_gripper(cmd):
     """정책이 낸 9차원 액션의 그리퍼 채널(7,8)을 학습 때와 같은 두 값으로 스냅."""
     if not GRIPPER_BINARIZE:
         return cmd
     cmd = np.asarray(cmd, dtype=float).copy()
-    closing = float(np.mean(cmd[7:9])) < GRIPPER_MID
+    closing = float(np.mean(cmd[7:9])) < GRIPPER_CLOSE_THRESH
     cmd[7:9] = GRIPPER_CLOSED if closing else GRIPPER_OPEN
     return cmd
 TARGET_POS = [TARGET_FIXED_XY[0], TARGET_FIXED_XY[1], TARGET_Z]
