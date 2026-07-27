@@ -20,7 +20,10 @@ import pickle
 import numpy as np
 
 # 🔧 lerobot-train --output_dir 의 체크포인트. ls 로 실제 경로 확인 후 맞출 것.
-MODEL_PATH = "/data/jinju/act_pickplace_v5/checkpoints/last/pretrained_model"
+# 코드를 고치지 않고 환경변수로도 지정 가능:
+#   MODEL_PATH=/data/jinju/act_pickplace_s3/checkpoints/100000/pretrained_model python act_policy_server.py
+MODEL_PATH = os.environ.get(
+    "MODEL_PATH", "/data/jinju/act_pickplace_v5/checkpoints/last/pretrained_model")
 TASK = "pick up the cube and place it on the target"
 HOST = "127.0.0.1"
 PORT = 5555

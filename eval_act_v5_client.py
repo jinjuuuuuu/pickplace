@@ -9,8 +9,10 @@
 #   창1:  conda activate lerobot && python ~/pickplace/act_policy_server.py
 #   창2:  /data/isaacsim/python.sh ~/pickplace/eval_act_v5_client.py
 #
-# 결과: eval_results_act_v5.json (성공률 등). CUBE_XY_LIST는 v4와 동일 → 직접 비교용.
+# 결과: eval_results_act_v5.json (성공률 등). CUBE_XY_LIST는 학습 영역(20x20cm)을
+# 덮는 4x4 격자 → v4 목록과는 좌표가 다르므로 v4 수치와 직접 비교하지 말 것.
 # ---------------------------------------------------------------------------
+import os
 import json
 import socket
 import struct
@@ -22,7 +24,38 @@ HOST = "127.0.0.1"
 PORT = 5555
 
 HEADLESS = True
+# ⚠ 렌더는 headless와 별개로 반드시 True. 예전엔 world.step(render=RENDER)
+# 였는데, headless에서 render=False면 Camera.get_rgba()가 빈 배열을 돌려줘서
+# grab_rgb()가 온통 검은 이미지를 정책에 먹였다(=무조건 0%). 수집 스크립트는
+# RENDER=True로 돌았으니 평가도 같아야 한다. 아래 blank 카운터로 재발을 감시한다.
+RENDER = True
 MAX_STEPS = 1500
+
+# 학습 데이터를 몇 프레임마다 솎았는지(subsample_dataset.py --stride).
+# 물리는 60Hz로 도는데 정책은 (60/stride)Hz로 판단하도록 학습됐으므로,
+# 액션 하나를 stride번 유지해야 로봇이 학습 때와 같은 속도로 움직인다.
+#   - v5 등 솎지 않은 데이터로 학습한 모델: 1 (기본값)
+#   - stride 3으로 솎은 v6 모델:          3
+# 실행 예:  ACTION_REPEAT=3 /data/isaacsim/python.sh eval_act_v5_client.py
+ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", "1")))
+
+# 학습 데이터의 그리퍼 값은 0.025(닫힘)/0.04(열림) 두 가지뿐이다
+# (pick_place_collect.py에서 강제 이진화). ACT는 회귀 모델이라 그 사이의 값을
+# 내놓는데, 큐브가 5cm라 손가락이 0.025보다 조금만 벌어져도 아예 못 잡는다.
+# 그래서 수집 때와 동일하게 이진화해서 명령한다. 끄려면 GRIPPER_BINARIZE=0.
+GRIPPER_BINARIZE = os.environ.get("GRIPPER_BINARIZE", "1") != "0"
+GRIPPER_CLOSED, GRIPPER_OPEN = 0.025, 0.04
+GRIPPER_MID = (GRIPPER_CLOSED + GRIPPER_OPEN) / 2.0   # 0.0325
+
+
+def binarize_gripper(cmd):
+    """정책이 낸 9차원 액션의 그리퍼 채널(7,8)을 학습 때와 같은 두 값으로 스냅."""
+    if not GRIPPER_BINARIZE:
+        return cmd
+    cmd = np.asarray(cmd, dtype=float).copy()
+    closing = float(np.mean(cmd[7:9])) < GRIPPER_MID
+    cmd[7:9] = GRIPPER_CLOSED if closing else GRIPPER_OPEN
+    return cmd
 IMG_W, IMG_H = 160, 120
 
 TARGET_POS = [0.50, -0.15, 0.025]
@@ -31,12 +64,26 @@ START_POSE = [0.0, -0.3, 0.0, -2.5, 0.0, 2.2, 0.8, 0.04, 0.04]
 SUCCESS_XY_TOL = 0.05
 SUCCESS_MIN_LIFT = 0.04
 
-# v4 평가와 동일한 15개 위치 (seed=123, 타겟서 >=0.15m) → v4 vs v5 직접 비교.
+# 학습 영역(pick_place_collect_aloha.py: x 0.325~0.525, y 0.05~0.25)을 고르게
+# 덮는 4x4 격자 16개. 예전 v4용 15개 목록은 새 영역 밖 8개가 섞여 있어서 폐기
+# 했다(학습한 적 없는 곳이라 무조건 실패). 학습은 연속 랜덤이므로 이 16개는
+# 전부 "처음 보는 정확한 좌표" → 격자여도 일반화 테스트로 성립한다.
 CUBE_XY_LIST = [
-    (0.344, 0.156), (0.505, 0.195), (0.485, 0.065), (0.500, 0.009), (0.424, 0.041),
-    (0.346, -0.243), (0.418, 0.114), (0.530, 0.063), (0.529, 0.182), (0.355, 0.183),
-    (0.499, 0.183), (0.375, 0.014), (0.318, 0.042), (0.359, 0.132), (0.343, -0.094),
+    (0.325, 0.050), (0.325, 0.117), (0.325, 0.183), (0.325, 0.250),
+    (0.392, 0.050), (0.392, 0.117), (0.392, 0.183), (0.392, 0.250),
+    (0.458, 0.050), (0.458, 0.117), (0.458, 0.183), (0.458, 0.250),
+    (0.525, 0.050), (0.525, 0.117), (0.525, 0.183), (0.525, 0.250),
 ]
+
+# 고정 태스크(pick_place_collect_fixed.py)로 학습한 모델을 평가할 때는, 학습한
+# 그 지점에서 재봐야 의미가 있다. FIXED_CUBE로 큐브 위치를, N_EPISODES로 반복
+# 횟수를 지정하면 위 15개 목록 대신 그 지점만 반복 평가한다.
+#   FIXED_CUBE=0.425,0.125 N_EPISODES=10 ACTION_REPEAT=3 python.bat eval_act_v5_client.py
+_fixed = os.environ.get("FIXED_CUBE", "").strip()
+if _fixed:
+    _fx, _fy = (float(v) for v in _fixed.split(","))
+    CUBE_XY_LIST = [(_fx, _fy)] * int(os.environ.get("N_EPISODES", "10"))
+    print(f"[client] 고정 지점 평가 모드: cube=({_fx:.3f},{_fy:.3f}) x {len(CUBE_XY_LIST)}회")
 
 WRIST_CAM_PRIM = "/World/Franka/panda_hand/WristCam/Camera"
 OVER_CAM_PRIM = "/World/OverheadCam/Camera"
@@ -170,22 +217,31 @@ world.reset()
 wrist_cam.initialize()
 over_cam.initialize()
 for _ in range(15):
-    world.step(render=not HEADLESS)
+    world.step(render=RENDER)
 
 n_dof = franka.num_dof
 
 
+# 검은/단색 프레임을 세어 둔다. 이게 0이 아니면 성공률 숫자는 믿을 수 없다.
+_frame_stats = {"blank": 0, "total": 0}
+
+
 def grab_rgb(cam):
+    _frame_stats["total"] += 1
     try:
         rgba = cam.get_rgba()
         if rgba is None or getattr(rgba, "ndim", 0) != 3 or rgba.shape[0] < 2:
+            _frame_stats["blank"] += 1
             return np.zeros((IMG_H, IMG_W, 3), dtype=np.uint8)
         img = rgba[:, :, :3]
         if img.dtype != np.uint8:
             img = (np.clip(img * 255.0, 0, 255) if float(img.max()) <= 1.0
                    else np.clip(img, 0, 255)).astype(np.uint8)
+        if float(img.std()) < 1.0:      # 사실상 단색 = 렌더가 안 붙은 것
+            _frame_stats["blank"] += 1
         return np.ascontiguousarray(img, dtype=np.uint8)
     except Exception:
+        _frame_stats["blank"] += 1
         return np.zeros((IMG_H, IMG_W, 3), dtype=np.uint8)
 
 
@@ -197,18 +253,20 @@ def move_to_start():
         start_full = cur
     for _ in range(60):
         franka.apply_action(ArticulationAction(joint_positions=start_full))
-        world.step(render=not HEADLESS)
+        world.step(render=RENDER)
 
 
 target_pos = np.array(TARGET_POS, dtype=np.float32)
 results = []
 
-print(f"[client] starting {len(CUBE_XY_LIST)} episodes")
+print(f"[client] starting {len(CUBE_XY_LIST)} episodes "
+      f"| ACTION_REPEAT={ACTION_REPEAT} (정책 {60/ACTION_REPEAT:.0f}Hz / 물리 60Hz)"
+      f" | GRIPPER_BINARIZE={GRIPPER_BINARIZE}")
 for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
     world.reset()
     cube.set_world_pose(position=np.array([cx, cy, 0.025], dtype=float))
     for _ in range(10):
-        world.step(render=not HEADLESS)
+        world.step(render=RENDER)
     move_to_start()
 
     reset_remote()   # 서버 정책 상태 초기화
@@ -219,13 +277,16 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
     grasp_attempted = False
     final_step = MAX_STEPS
 
+    cmd = None
     for step in range(MAX_STEPS):
-        w = grab_rgb(wrist_cam)
-        o = grab_rgb(over_cam)
         jp = np.array(franka.get_joint_positions(), dtype=np.float32)[:9]
-        cmd = act_remote(w, o, jp)
+        # ACTION_REPEAT 스텝마다 한 번만 정책에 물어보고, 나머지 스텝은 같은 액션을 유지.
+        if step % ACTION_REPEAT == 0 or cmd is None:
+            w = grab_rgb(wrist_cam)
+            o = grab_rgb(over_cam)
+            cmd = binarize_gripper(act_remote(w, o, jp))
         franka.apply_action(ArticulationAction(joint_positions=cmd))
-        world.step(render=not HEADLESS)
+        world.step(render=RENDER)
 
         gt_cube, _ = cube.get_world_pose()
         gt_cube = np.array(gt_cube, dtype=np.float32)
@@ -252,14 +313,20 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
 n_success = sum(r["success"] for r in results)
 summary = {
     "model": "ACT v5 (grid-sampled, via policy server)",
+    "action_repeat": ACTION_REPEAT,
     "n_episodes": len(results),
     "n_success": n_success,
     "success_rate": n_success / len(results),
     "avg_steps_success": float(np.mean([r["steps"] for r in results if r["success"]])) if n_success else None,
     "avg_min_xy_err": float(np.mean([r["min_xy_err"] for r in results])),
     "n_grasp_attempted": sum(r["grasp_attempted"] for r in results),
+    "blank_camera_frames": _frame_stats["blank"],
+    "camera_frames_total": _frame_stats["total"],
     "episodes": results,
 }
+if _frame_stats["blank"]:
+    print(f"[client] ⚠ 검은 프레임 {_frame_stats['blank']}/{_frame_stats['total']}개 — "
+          f"정책이 이미지를 못 본 것이므로 이 성공률은 무의미하다 (RENDER 설정 확인)")
 with open("eval_results_act_v5.json", "w") as f:
     json.dump(summary, f, indent=2)
 
