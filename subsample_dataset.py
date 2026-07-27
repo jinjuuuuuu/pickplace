@@ -22,6 +22,14 @@ import argparse
 
 import numpy as np
 
+# stride 기본값은 scene_config에서 온다. 평가의 ACTION_REPEAT도 같은 값을 읽으므로
+# stride를 바꿀 때 한 곳만 고치면 된다 (어긋나면 로봇이 학습 때와 다른 속도로
+# 움직이는데, 에러가 안 나고 그냥 실패한다).
+try:
+    from scene_config import TRAIN_STRIDE, RECORD_HZ
+except ImportError:      # 이 스크립트만 따로 복사해 쓰는 경우
+    TRAIN_STRIDE, RECORD_HZ = 3, 60
+
 # obs 레이아웃: [joint_pos(9), joint_vel(9), cube_rel(3), target_rel(3), cube_pos(3)]
 PROPRIO_DIM = 9
 ARM_DOF = 7          # 그리퍼 2축을 뺀 팔 관절
@@ -233,9 +241,11 @@ def convert(files, args):
 def main():
     p = argparse.ArgumentParser(description="npz 에피소드를 솎아서 LeRobotDataset으로 변환")
     p.add_argument("--src", default="/data/jinju/bc_data_v5", help="episode_*.npz 폴더")
-    p.add_argument("--stride", type=int, default=3, help="N프레임마다 1개 사용")
-    p.add_argument("--repo-id", default="jamongsteak/pickplace_vision_v6_s3")
-    p.add_argument("--src-fps", type=int, default=60, help="원본 기록 주기(Isaac World 기본 60)")
+    p.add_argument("--stride", type=int, default=TRAIN_STRIDE,
+                   help=f"N프레임마다 1개 사용 (기본 {TRAIN_STRIDE}, scene_config.TRAIN_STRIDE)")
+    p.add_argument("--repo-id", default="jamongsteak/pickplace_vision_v10_s3")
+    p.add_argument("--src-fps", type=int, default=RECORD_HZ,
+                   help=f"원본 기록 주기 (기본 {RECORD_HZ}, scene_config.RECORD_HZ)")
     p.add_argument("--analyze", action="store_true", help="변환하지 않고 stride 후보만 분석")
     p.add_argument("--sample-n", type=int, default=20, help="분석에 쓸 에피소드 수")
     p.add_argument("--chunk-size", type=int, default=100, help="ACT chunk_size (지평 계산용)")

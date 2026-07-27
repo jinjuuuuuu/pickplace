@@ -20,6 +20,18 @@ import pickle
 import time
 import numpy as np
 
+# 씬 설정(카메라·해상도·조명·영역·평가 격자·솎기 stride)은 scene_config.py 한
+# 곳에서만 온다. 수집 스크립트도 같은 파일을 읽으므로 두 씬이 어긋날 수 없다.
+from scene_config import (
+    IMG_W, IMG_H, WRIST_CAM_PRIM, OVER_CAM_PRIM,
+    CAM_H_APERTURE, CAM_V_APERTURE, CAM_CLIP_NEAR, CAM_CLIP_FAR,
+    WRIST_FOCAL, WRIST_TRANSLATE, WRIST_ROTATE,
+    OVER_FOCAL, OVER_TRANSLATE, OVER_ROTATE,
+    LIGHT_INTENSITY, CUBE_COLOR, CUBE_SIZE, CUBE_MASS, CUBE_Z,
+    TARGET_FIXED_XY, TARGET_Z, START_POSE, TRAIN_STRIDE,
+    SUCCESS_XY_TOL, SUCCESS_MIN_LIFT, EVAL_CUBE_XY_LIST,
+)
+
 HOST = "127.0.0.1"
 PORT = 5555
 
@@ -32,12 +44,12 @@ RENDER = True
 MAX_STEPS = 1500
 
 # 학습 데이터를 몇 프레임마다 솎았는지(subsample_dataset.py --stride).
-# 물리는 60Hz로 도는데 정책은 (60/stride)Hz로 판단하도록 학습됐으므로,
-# 액션 하나를 stride번 유지해야 로봇이 학습 때와 같은 속도로 움직인다.
-#   - v5 등 솎지 않은 데이터로 학습한 모델: 1 (기본값)
-#   - stride 3으로 솎은 v6 모델:          3
-# 실행 예:  ACTION_REPEAT=3 /data/isaacsim/python.sh eval_act_v5_client.py
-ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", "1")))
+# 물리는 60Hz로 도는데 정책은 (60/stride)Hz로 판단하도록 학습됐으므로, 액션
+# 하나를 stride번 유지해야 로봇이 학습 때와 같은 속도로 움직인다. 이 값이
+# 틀리면 에러 없이 그냥 실패한다 — 그래서 scene_config.TRAIN_STRIDE를 기본값으로
+# 쓴다(예전엔 기본값이 1이라 환경변수를 잊으면 조용히 3배 빠르게 움직였다).
+# 솎지 않은 옛 모델(v5 등)을 평가할 때만 ACTION_REPEAT=1로 덮어쓸 것.
+ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", str(TRAIN_STRIDE))))
 
 # 학습 데이터의 그리퍼 값은 0.025(닫힘)/0.04(열림) 두 가지뿐이다
 # (pick_place_collect_aloha.py에서 강제 이진화). ACT는 회귀 모델이라 그 사이 값을
@@ -56,18 +68,6 @@ def binarize_gripper(cmd):
     closing = float(np.mean(cmd[7:9])) < GRIPPER_MID
     cmd[7:9] = GRIPPER_CLOSED if closing else GRIPPER_OPEN
     return cmd
-# 씬 설정(카메라·해상도·조명·영역·평가 격자)은 scene_config.py 한 곳에서만
-# 온다. 수집 스크립트도 같은 파일을 읽으므로 두 씬이 어긋날 수 없다.
-from scene_config import (
-    IMG_W, IMG_H, WRIST_CAM_PRIM, OVER_CAM_PRIM,
-    CAM_H_APERTURE, CAM_V_APERTURE, CAM_CLIP_NEAR, CAM_CLIP_FAR,
-    WRIST_FOCAL, WRIST_TRANSLATE, WRIST_ROTATE,
-    OVER_FOCAL, OVER_TRANSLATE, OVER_ROTATE,
-    LIGHT_INTENSITY, CUBE_COLOR, CUBE_SIZE, CUBE_MASS, CUBE_Z,
-    TARGET_FIXED_XY, TARGET_Z, START_POSE,
-    SUCCESS_XY_TOL, SUCCESS_MIN_LIFT, EVAL_CUBE_XY_LIST,
-)
-
 TARGET_POS = [TARGET_FIXED_XY[0], TARGET_FIXED_XY[1], TARGET_Z]
 
 # 학습 영역을 고르게 덮는 4x4 격자. scene_config가 CUBE_*_RANGE에서 계산하므로

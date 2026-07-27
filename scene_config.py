@@ -93,6 +93,20 @@ EVAL_CUBE_XY_LIST = [
     for y in _lin(CUBE_Y_RANGE[0], CUBE_Y_RANGE[1], EVAL_GRID_N)
 ]
 
+# === 기록 주기 / 솎기 ========================================================
+# Isaac Sim World 기본 physics_dt=1/60이고 world.step()마다 한 프레임 저장한다.
+# 이건 참고 사례들보다 촘촘하다 (ALOHA 50Hz/400프레임, Deepkar 30Hz/450프레임).
+# 우리는 1067프레임/에피소드이므로 솎아서 저쪽 주기에 맞춘다.
+#
+# TRAIN_STRIDE를 바꾸면 세 곳이 같이 따라와야 한다. 그래서 여기 한 곳에 둔다:
+#   1) subsample_dataset.py --stride 의 기본값
+#   2) 평가의 ACTION_REPEAT (정책은 RECORD_HZ/STRIDE Hz로 판단, 물리는 60Hz)
+#   3) chunk 지평 (chunk_size 100이 에피소드의 몇 %를 덮는가)
+# stride별 지평:  1 -> 9.4%   2 -> 18.7%   3 -> 28.1%
+#   비교: ALOHA 25%, Deepkar 22%. -> 3이 표준 영역이다.
+RECORD_HZ = 60
+TRAIN_STRIDE = 3
+
 # 평가 성공 판정
 SUCCESS_XY_TOL = 0.05
 SUCCESS_MIN_LIFT = 0.04
