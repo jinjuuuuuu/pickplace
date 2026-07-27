@@ -248,6 +248,18 @@ def grab_rgb(cam):
         return np.zeros((IMG_H, IMG_W, 3), dtype=np.uint8)
 
 
+def get_ee_position(franka):
+    """수집 스크립트(pick_place_collect_aloha.py)의 동명 함수와 같다."""
+    try:
+        ee_pos, _ = franka.end_effector.get_world_pose()
+        return np.array(ee_pos, dtype=np.float32)
+    except Exception:
+        hand = stage.GetPrimAtPath("/World/Franka/panda_hand")
+        xf = UsdGeom.Xformable(hand).ComputeLocalToWorldTransform(0)
+        t = xf.ExtractTranslation()
+        return np.array([t[0], t[1], t[2]], dtype=np.float32)
+
+
 def move_to_start():
     start_full = np.array(START_POSE, dtype=float)
     if len(start_full) < n_dof:
@@ -279,6 +291,11 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
     min_xy_err = None
     grasp_attempted = False
     final_step = MAX_STEPS
+    # 정책이 큐브 위치를 실제로 읽고 있는지 보려면 손이 어디로 가는지를 봐야 한다.
+    # 큐브 위치가 달라도 아래 ee_at_close가 거의 같은 값이면, 정책은 이미지에서
+    # 큐브를 못 찾고 학습 데이터의 평균 궤적을 재생하고 있다는 뜻이다.
+    min_ee_cube = None
+    ee_at_close = None
 
     cmd = None
     for step in range(MAX_STEPS):
@@ -301,7 +318,12 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
         max_lift = max(max_lift, float(gt_cube[2]))
         cube_target_xy = float(np.linalg.norm(gt_cube[:2] - target_pos[:2]))
         min_xy_err = cube_target_xy if min_xy_err is None else min(min_xy_err, cube_target_xy)
+        ee = get_ee_position(franka)
+        ee_cube = float(np.linalg.norm(ee[:2] - gt_cube[:2]))
+        min_ee_cube = ee_cube if min_ee_cube is None else min(min_ee_cube, ee_cube)
         if jp[7] < 0.035:
+            if ee_at_close is None:
+                ee_at_close = [round(float(ee[0]), 3), round(float(ee[1]), 3)]
             grasp_attempted = True
         gripper_open = jp[7] > 0.035
 
@@ -314,9 +336,12 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
         "episode": ep, "cube_xy": [cx, cy], "success": success, "steps": final_step,
         "max_lift": round(max_lift, 4), "min_xy_err": round(float(min_xy_err), 4),
         "grasp_attempted": grasp_attempted,
+        "min_ee_cube": round(float(min_ee_cube), 4) if min_ee_cube is not None else None,
+        "ee_at_close": ee_at_close,
     })
     print(f"[client] ep {ep:2d} cube=({cx:.3f},{cy:.3f}) success={success} steps={final_step} "
-          f"max_lift={max_lift:.3f} min_xy_err={min_xy_err:.3f} grasp_attempted={grasp_attempted}")
+          f"max_lift={max_lift:.3f} min_xy_err={min_xy_err:.3f} grasp_attempted={grasp_attempted} "
+          f"min_ee_cube={min_ee_cube:.3f} ee_at_close={ee_at_close}")
 
 n_success = sum(r["success"] for r in results)
 summary = {
@@ -328,6 +353,15 @@ summary = {
     "avg_steps_success": float(np.mean([r["steps"] for r in results if r["success"]])) if n_success else None,
     "avg_min_xy_err": float(np.mean([r["min_xy_err"] for r in results])),
     "n_grasp_attempted": sum(r["grasp_attempted"] for r in results),
+    "avg_min_ee_cube": float(np.mean([r["min_ee_cube"] for r in results
+                                      if r["min_ee_cube"] is not None])),
+    # 손을 닫은 지점의 산포. 큐브가 20x20cm에 퍼져 있으니 정책이 큐브를 보고
+    # 있다면 이 표준편차도 수 cm 나와야 한다. 1cm 미만이면 큐브와 무관하게
+    # 늘 같은 곳으로 가고 있다는 뜻 = 이미지에서 위치를 못 읽는다.
+    "ee_at_close_std": [
+        round(float(np.std([r["ee_at_close"][i] for r in results if r["ee_at_close"]])), 4)
+        for i in (0, 1)
+    ] if any(r["ee_at_close"] for r in results) else None,
     "blank_camera_frames": _frame_stats["blank"],
     "camera_frames_total": _frame_stats["total"],
     "episodes": results,
@@ -340,6 +374,9 @@ with open("eval_results_act_v5.json", "w") as f:
 
 print(f"[client] DONE success_rate={summary['success_rate']:.2f} ({n_success}/{len(results)}) "
       f"grasp_attempted={summary['n_grasp_attempted']}/{len(results)}")
+print(f"[client] 손-큐브 최소거리 평균={summary['avg_min_ee_cube']:.3f}m | "
+      f"손 닫은 지점 표준편차={summary['ee_at_close_std']} "
+      f"(큐브는 20x20cm에 퍼져 있으므로 1cm 미만이면 큐브를 못 보고 있다는 뜻)")
 
 try:
     send_msg(sock, {"cmd": "bye"})
