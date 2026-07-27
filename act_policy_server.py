@@ -38,10 +38,9 @@ try:
     from lerobot.common.control_utils import predict_action
 except ImportError:
     from lerobot.utils.control_utils import predict_action
-try:
-    from lerobot.utils.utils import get_safe_torch_device
-except ImportError:
-    from lerobot.common.utils.utils import get_safe_torch_device
+# get_safe_torch_device는 안 쓴다. fork마다 위치가 다른데, 하는 일이 "문자열을
+# torch.device로 바꾸고 cuda가 없으면 cpu로 내린다"뿐이고 그 판단은 아래에서
+# torch.cuda.is_available()로 이미 하고 있다.
 
 
 def send_msg(sock, obj):
@@ -78,7 +77,7 @@ if not os.path.isdir(MODEL_PATH):
 print(f"[server] loading v5 policy: {MODEL_PATH}")
 policy = ACTPolicy.from_pretrained(MODEL_PATH)
 policy.config.device = "cuda" if torch.cuda.is_available() else "cpu"
-device = get_safe_torch_device(policy.config.device)
+device = torch.device(policy.config.device)
 policy.to(device).eval()
 preprocessor, postprocessor = make_pre_post_processors(policy.config, pretrained_path=MODEL_PATH)
 print(f"[server] policy loaded. device={device}")
