@@ -201,7 +201,10 @@ UsdGeom.XformCommonAPI(over_xform).SetTranslate(Gf.Vec3d(0.4, 0.0, 1.5))
 UsdGeom.XformCommonAPI(over_xform).SetRotate(Gf.Vec3f(0.0, 0.0, -89.9))
 
 dome_light = UsdLux.DomeLight.Define(stage, "/World/DR_DomeLight")
-dome_light.GetIntensityAttr().Set(1000.0)
+# ⚠ 수집 스크립트의 LIGHT_INTENSITY와 반드시 같아야 한다. 1000으로 하드코딩돼
+# 있었는데 수집은 1500이었다 — DOMAIN_RANDOMIZE=False라 정책은 1500 조명만 본
+# 적이 있으므로, 33% 어두운 이미지는 학습 분포 밖이다.
+dome_light.GetIntensityAttr().Set(1500.0)
 
 for _ in range(50):
     simulation_app.update()
@@ -284,6 +287,11 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
         if step % ACTION_REPEAT == 0 or cmd is None:
             w = grab_rgb(wrist_cam)
             o = grab_rgb(over_cam)
+            if step == 0:
+                # 학습 데이터(bc_data_v9의 images_*)의 mean/std와 비교해서 조명·색이
+                # 같은 분포인지 확인하는 용도. 크게 다르면 정책 입력이 학습 분포 밖이다.
+                print(f"[client]    img wrist mean={w.mean():6.2f} std={w.std():5.2f} | "
+                      f"over mean={o.mean():6.2f} std={o.std():5.2f}")
             cmd = binarize_gripper(act_remote(w, o, jp))
         franka.apply_action(ArticulationAction(joint_positions=cmd))
         world.step(render=RENDER)
