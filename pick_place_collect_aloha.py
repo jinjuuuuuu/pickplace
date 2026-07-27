@@ -108,11 +108,28 @@ from isaacsim.robot.manipulators.examples.franka.controllers import PickPlaceCon
 # 이어받기(RESUME): SAVE_PATH에 이미 episode_*.npz가 있으면 그 개수만큼 빼고
 # 부족분만 더 모은다. v8은 격자점별로 집계해야 했지만 v9는 지점이 하나라
 # 파일 개수만 세면 된다. (중간에 멈춰도 처음부터 다시 돌리지 않기 위함)
+#
+# 단, 랜덤 범위(CUBE_*_RANGE)를 바꾼 뒤에 이어받으면 서로 다른 분포의 에피소드가
+# 한 데이터셋에 섞인다. 그럴 때는 FRESH_START=1로 기존 파일을 지우고 새로 모을 것:
+#     FRESH_START=1 /data/isaacsim/python.sh pick_place_collect_aloha.py
+# 기본값은 0(이어받기)이다 — 실수로 수집분을 날리지 않기 위함.
 # ---------------------------------------------------------------------------
+FRESH_START = os.environ.get("FRESH_START", "0") == "1"
+
+
 def build_resume_plan():
     """반환: (이번 회차에 모을 에피소드 수, 저장 시작 인덱스)."""
     import glob as _glob
     files = sorted(_glob.glob(os.path.join(SAVE_PATH, "episode_*.npz")))
+
+    if FRESH_START:
+        stale = files + _glob.glob(os.path.join(SAVE_PATH, "bc_dataset.npz"))
+        for f in stale:
+            os.remove(f)
+        print(f"[fresh] FRESH_START=1 → 기존 파일 {len(stale)}개 삭제, "
+              f"{NUM_EPISODES}개를 처음부터 모은다")
+        return NUM_EPISODES, 0
+
     if not files:
         return NUM_EPISODES, 0
     max_idx = -1
