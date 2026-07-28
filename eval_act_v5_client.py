@@ -152,18 +152,56 @@ if not connected:
 print("[client] connected to policy server")
 
 
-def act_remote(wrist_img, over_img, state):
-    send_msg(sock, {
-        "cmd": "act",
-        "wrist": wrist_img.tobytes(),
-        "over": over_img.tobytes(),
-        "shape": list(wrist_img.shape),
-        "state": [float(x) for x in state],
-    })
+# ---- 이미지 전송 최적화 (원격 서버로 돌릴 때 SSH 터널이 병목이 된다) --------
+# 두 가지를 한다. 둘 다 정책이 보는 픽셀을 바꾸지 않는다:
+#   1) 무손실 압축 — 320x240 RGB 원본 230KB를 PNG로 줄인다(바닥이 균일해 잘 줄어든다).
+#   2) 필요 없는 프레임은 아예 안 보낸다 — n_action_steps=100이면 정책은 100번
+#      질의 중 1번만 새 관측을 쓴다(나머지는 큐에서 꺼냄). 서버가 다음 호출에
+#      이미지가 필요한지 알려주므로, 필요 없을 때는 상태값만 보낸다.
+# 서버가 need_obs를 안 주는 구버전이면 매번 보내는 쪽으로 안전하게 동작한다.
+try:
+    from PIL import Image as _PILImage
+    import io as _io
+    IMG_ENC = "png"
+except ImportError:
+    _PILImage = None
+    IMG_ENC = "zlib"
+import zlib as _zlib
+
+_net = {"sent_bytes": 0, "raw_bytes": 0, "img_calls": 0, "skip_calls": 0}
+
+
+def _encode(img):
+    raw = img.tobytes()
+    _net["raw_bytes"] += len(raw)
+    if IMG_ENC == "png":
+        buf = _io.BytesIO()
+        _PILImage.fromarray(img).save(buf, format="PNG")
+        return buf.getvalue()
+    return _zlib.compress(raw, 6)
+
+
+def act_remote(wrist_img, over_img, state, send_images=True):
+    """send_images=False면 이미지를 생략한다(서버가 직전 프레임을 재사용).
+
+    반환: (action, 다음 호출에 이미지가 필요한가)
+    """
+    msg = {"cmd": "act", "state": [float(x) for x in state]}
+    if send_images:
+        msg["enc"] = IMG_ENC
+        msg["wrist"] = _encode(wrist_img)
+        msg["over"] = _encode(over_img)
+        msg["shape"] = list(wrist_img.shape)
+        _net["sent_bytes"] += len(msg["wrist"]) + len(msg["over"])
+        _net["img_calls"] += 1
+    else:
+        _net["skip_calls"] += 1
+    send_msg(sock, msg)
     resp = recv_msg(sock)
     if resp is None or "action" not in resp:
         raise RuntimeError(f"[client] 서버 응답 오류: {resp}")
-    return np.asarray(resp["action"], dtype=float)
+    # 구버전 서버는 need_obs를 안 준다 -> 매번 이미지를 보낸다
+    return np.asarray(resp["action"], dtype=float), bool(resp.get("need_obs", True))
 
 
 def reset_remote():
@@ -317,18 +355,24 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
     cube_rel_at_close = None
 
     cmd = None
+    need_obs = True      # reset 직후에는 정책 큐가 비어 있으므로 반드시 관측이 필요하다
     for step in range(MAX_STEPS):
         jp = np.array(franka.get_joint_positions(), dtype=np.float32)[:9]
         # ACTION_REPEAT 스텝마다 한 번만 정책에 물어보고, 나머지 스텝은 같은 액션을 유지.
         if step % ACTION_REPEAT == 0 or cmd is None:
-            w = grab_rgb(wrist_cam)
-            o = grab_rgb(over_cam)
-            if step == 0:
-                # 학습 데이터(bc_data_v9의 images_*)의 mean/std와 비교해서 조명·색이
-                # 같은 분포인지 확인하는 용도. 크게 다르면 정책 입력이 학습 분포 밖이다.
-                print(f"[client]    img wrist mean={w.mean():6.2f} std={w.std():5.2f} | "
-                      f"over mean={o.mean():6.2f} std={o.std():5.2f}")
-            cmd = binarize_gripper(act_remote(w, o, jp))
+            # 정책이 새 관측을 쓸 때만 이미지를 캡처·전송한다. 큐에서 꺼내는
+            # 스텝에서는 이미지가 어차피 쓰이지 않는다(서버가 need_obs로 알려준다).
+            send_images = need_obs or step == 0
+            if send_images:
+                w = grab_rgb(wrist_cam)
+                o = grab_rgb(over_cam)
+                if step == 0:
+                    # 학습 데이터(bc_data_v11의 images_*)의 mean/std와 비교해서 조명·색이
+                    # 같은 분포인지 확인하는 용도. 크게 다르면 학습 분포 밖이다.
+                    print(f"[client]    img wrist mean={w.mean():6.2f} std={w.std():5.2f} | "
+                          f"over mean={o.mean():6.2f} std={o.std():5.2f}")
+            raw_cmd, need_obs = act_remote(w, o, jp, send_images=send_images)
+            cmd = binarize_gripper(raw_cmd)
         franka.apply_action(ArticulationAction(joint_positions=cmd))
         world.step(render=RENDER)
 
@@ -397,6 +441,11 @@ with open("eval_results_act_v5.json", "w") as f:
 
 print(f"[client] DONE success_rate={summary['success_rate']:.2f} ({n_success}/{len(results)}) "
       f"grasp_attempted={summary['n_grasp_attempted']}/{len(results)}")
+_tot = _net["img_calls"] + _net["skip_calls"]
+if _tot:
+    print(f"[client] 전송량 {_net['sent_bytes']/1e6:.1f}MB "
+          f"(압축 안 하고 매번 보냈다면 {_net['raw_bytes']/1e6*_tot/max(1,_net['img_calls']):.1f}MB) "
+          f"| 이미지 전송 {_net['img_calls']}/{_tot}회, 생략 {_net['skip_calls']}회 | 인코딩 {IMG_ENC}")
 print(f"[client] 손-큐브 최소거리 평균={summary['avg_min_ee_cube']:.3f}m | "
       f"손 닫은 지점 표준편차={summary['ee_at_close_std']} "
       f"(큐브는 20x20cm에 퍼져 있으므로 1cm 미만이면 큐브를 못 보고 있다는 뜻)")

@@ -63,6 +63,33 @@ except ImportError:
 # torch.cuda.is_available()로 이미 하고 있다.
 
 
+# ---- 이미지 디코딩 / 관측 필요 여부 ----------------------------------------
+# 클라이언트는 정책이 새 관측을 실제로 쓰는 스텝에만 이미지를 보낸다. ACT는
+# n_action_steps개를 큐에 채워두고 하나씩 꺼내므로, 큐가 비어 있지 않으면 이미지가
+# 쓰이지 않는다. 그 스텝에는 직전 프레임을 재사용한다(예측에 영향 없음).
+last_imgs = {"wrist": None, "over": None}
+
+
+def decode_img(payload, msg):
+    enc = msg.get("enc", "raw")
+    if enc == "png":
+        from PIL import Image
+        import io
+        return np.array(Image.open(io.BytesIO(payload)).convert("RGB"), dtype=np.uint8)
+    if enc == "zlib":
+        import zlib
+        payload = zlib.decompress(payload)
+    return np.frombuffer(payload, np.uint8).reshape(tuple(msg["shape"])).copy()
+
+
+def needs_observation():
+    """다음 호출에서 정책이 새 관측을 쓰는가 (= 액션 큐가 비었는가)."""
+    q = getattr(policy, "_action_queue", None)
+    if q is None:
+        return True          # 내부 구조가 다른 버전이면 안전하게 매번 요청
+    return len(q) == 0
+
+
 def send_msg(sock, obj):
     data = pickle.dumps(obj, protocol=4)   # protocol 4 = 3.11/3.12 호환
     sock.sendall(struct.pack(">I", len(data)) + data)
@@ -150,12 +177,19 @@ try:
                     policy.reset()
                     preprocessor.reset()
                     postprocessor.reset()
+                    # 이전 에피소드 프레임이 재사용되지 않도록 캐시도 비운다
+                    last_imgs["wrist"] = last_imgs["over"] = None
                     send_msg(conn, {"ok": True})
                 elif cmd == "act":
-                    shape = tuple(msg["shape"])
+                    if "wrist" in msg:
+                        last_imgs["wrist"] = decode_img(msg["wrist"], msg)
+                        last_imgs["over"] = decode_img(msg["over"], msg)
+                    elif last_imgs["wrist"] is None:
+                        send_msg(conn, {"error": "첫 호출에는 이미지가 있어야 합니다"})
+                        continue
                     obs = {
-                        "observation.images.wrist": np.frombuffer(msg["wrist"], np.uint8).reshape(shape).copy(),
-                        "observation.images.over":  np.frombuffer(msg["over"],  np.uint8).reshape(shape).copy(),
+                        "observation.images.wrist": last_imgs["wrist"],
+                        "observation.images.over":  last_imgs["over"],
                         "observation.state":        np.asarray(msg["state"], dtype=np.float32),
                     }
                     action = predict_action(
@@ -164,7 +198,7 @@ try:
                         use_amp=policy.config.use_amp, task=TASK, robot_type="franka",
                     )
                     act = action.squeeze(0).to("cpu").numpy().astype(float).tolist()
-                    send_msg(conn, {"action": act})
+                    send_msg(conn, {"action": act, "need_obs": needs_observation()})
                 elif cmd == "bye":
                     send_msg(conn, {"ok": True})
                     print("[server] client said bye")
