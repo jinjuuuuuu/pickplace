@@ -145,6 +145,31 @@ EVAL_DROPPED = [p for p in _grid if _too_close_to_target(*p)
                 or (EVAL_RING and _inside_collect(*p))]
 EVAL_CUBE_XY_LIST = [p for p in _grid if p not in EVAL_DROPPED]
 
+# EVAL_RANDOM=N: 격자 대신 영역에서 N개를 무작위로 뽑는다. 수집과 똑같은 방식
+# (연속 균등 + MIN_DISTANCE 재추첨)이므로 학습 분포에 대한 정직한 측정이 된다.
+# 고정 격자는 "그 16점에서 운이 좋았나"를 배제할 수 없고 표본도 적다.
+#   EVAL_RANDOM=30              평가 영역(마진 적용) 안에서 30개
+#   EVAL_RANDOM=30 EVAL_MARGIN=0  수집 영역 전체 = 학습 분포와 완전히 동일
+#   EVAL_SEED=123               같은 좌표를 다시 뽑으려면 시드를 고정 (기본 0)
+EVAL_RANDOM = int(_os.environ.get("EVAL_RANDOM", "0"))
+EVAL_SEED = int(_os.environ.get("EVAL_SEED", "0"))
+
+if EVAL_RANDOM > 0:
+    import random as _random
+    _rng = _random.Random(EVAL_SEED)
+    _xlo, _xhi = CUBE_X_RANGE[0] + EVAL_MARGIN, CUBE_X_RANGE[1] - EVAL_MARGIN
+    _ylo, _yhi = CUBE_Y_RANGE[0] + EVAL_MARGIN, CUBE_Y_RANGE[1] - EVAL_MARGIN
+    _pts = []
+    while len(_pts) < EVAL_RANDOM:
+        x, y = _rng.uniform(_xlo, _xhi), _rng.uniform(_ylo, _yhi)
+        if _too_close_to_target(x, y):
+            continue                      # 수집 스크립트와 같은 재추첨 조건
+        if EVAL_RING and _inside_collect(x, y):
+            continue
+        _pts.append((round(x, 4), round(y, 4)))
+    EVAL_CUBE_XY_LIST = _pts
+    EVAL_DROPPED = []
+
 # === 기록 주기 / 솎기 ========================================================
 # Isaac Sim World 기본 physics_dt=1/60이고 world.step()마다 한 프레임 저장한다.
 # 이건 참고 사례들보다 촘촘하다 (ALOHA 50Hz/400프레임, Deepkar 30Hz/450프레임).
@@ -179,7 +204,9 @@ if __name__ == "__main__":
           f"{RECORD_HZ//TRAIN_STRIDE}Hz)")
     _where = (f"수집 영역에서 {EVAL_MARGIN*100:.0f}cm 안쪽" if EVAL_MARGIN >= 0
               else f"수집 영역보다 {-EVAL_MARGIN*100:.0f}cm 밖 [!] 학습 분포 밖")
-    print(f"평가 위치     {len(EVAL_CUBE_XY_LIST)}개 ({EVAL_GRID_N}x{EVAL_GRID_N} 격자, {_where}"
+    _how = (f"랜덤 seed={EVAL_SEED}" if EVAL_RANDOM
+            else f"{EVAL_GRID_N}x{EVAL_GRID_N} 격자")
+    print(f"평가 위치     {len(EVAL_CUBE_XY_LIST)}개 ({_how}, {_where}"
           f"{', 테두리만' if EVAL_RING else ''})")
     if EVAL_DROPPED:
         print(f"              제외 {len(EVAL_DROPPED)}개: "
