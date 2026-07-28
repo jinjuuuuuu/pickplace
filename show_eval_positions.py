@@ -35,10 +35,23 @@ def sample(n, seed, margin=None):
 
 
 def load_collected(src):
-    """수집 npz들의 cube_pos(실제 학습에 쓰인 큐브 시작 좌표)를 읽는다."""
+    """수집 좌표를 읽는다. 폴더면 npz의 cube_pos를, .json이면 좌표 목록을 읽는다.
+
+    데이터가 다른 머신에 있을 때는 그쪽에서 좌표만 뽑아 json으로 옮기면 된다:
+      python -c "import glob,json,numpy as np; json.dump([[float(np.load(f)['cube_pos'][0]),
+        float(np.load(f)['cube_pos'][1])] for f in sorted(glob.glob('DIR/episode_*.npz'))],
+        open('collected.json','w'))"
+    """
     import glob
     import os
     import numpy as np
+
+    if src.lower().endswith(".json"):
+        import json
+        with open(src, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        return [(round(float(p[0]), 4), round(float(p[1]), 4)) for p in raw]
+
     files = sorted(glob.glob(os.path.join(src, "episode_*.npz")))
     if not files:
         raise SystemExit(f"에피소드가 없습니다: {src}")
