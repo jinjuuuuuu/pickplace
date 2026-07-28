@@ -35,10 +35,18 @@ from scene_config import (
     GRIPPER_CLOSE_THRESH as GRIPPER_CLOSE_THRESH_DEFAULT,
 )
 
-HOST = "127.0.0.1"
-PORT = 5555
+# 정책 서버 주소. 기본은 같은 머신. 서버를 워크스테이션에 두고 시뮬만 데스크톱에서
+# 돌리려면 POLICY_HOST에 워크스테이션 IP를 주고, 서버는 POLICY_BIND=0.0.0.0으로 띄운다.
+#   POLICY_HOST=211.253.242.54 C:\isaacsim\python.bat -u eval_act_v5_client.py
+# 주의: 매 정책스텝마다 320x240 이미지 2장(약 460KB)을 보낸다. 20Hz면 9MB/s라
+#       LAN이 아니면 느려진다. 가능하면 서버도 같은 머신에서 띄울 것.
+HOST = os.environ.get("POLICY_HOST", "127.0.0.1")
+PORT = int(os.environ.get("POLICY_PORT", "5555"))
 
-HEADLESS = True
+# GUI로 보고 싶으면 HEADLESS=0. 렌더 자체는 아래 RENDER가 담당하므로 성공률에는
+# 영향이 없다(수집도 headless+render였다). 다만 GUI를 켜면 느려진다.
+#   HEADLESS=0 C:\isaacsim\python.bat -u eval_act_v5_client.py
+HEADLESS = os.environ.get("HEADLESS", "1") != "0"
 # ⚠ 렌더는 headless와 별개로 반드시 True. 예전엔 world.step(render=RENDER)
 # 였는데, headless에서 render=False면 Camera.get_rgba()가 빈 배열을 돌려줘서
 # grab_rgb()가 온통 검은 이미지를 정책에 먹였다(=무조건 0%). 수집 스크립트는

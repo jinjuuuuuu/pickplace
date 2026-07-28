@@ -25,8 +25,12 @@ import numpy as np
 MODEL_PATH = os.environ.get(
     "MODEL_PATH", "/data/jinju/act_pickplace_v5/checkpoints/last/pretrained_model")
 TASK = "pick up the cube and place it on the target"
-HOST = "127.0.0.1"
-PORT = 5555
+# 기본은 같은 머신만 접속 가능(127.0.0.1). 시뮬을 다른 PC에서 돌리려면
+# POLICY_BIND=0.0.0.0 으로 띄우고, 클라이언트에 POLICY_HOST=<이 서버 IP>를 준다.
+#   POLICY_BIND=0.0.0.0 MODEL_PATH=... python act_policy_server.py
+# 주의: 이미지가 매 스텝 오가므로(320x240 x2 = 약 460KB) LAN이 아니면 느리다.
+HOST = os.environ.get("POLICY_BIND", "127.0.0.1")
+PORT = int(os.environ.get("POLICY_PORT", "5555"))
 
 # --- 폐루프 옵션 (둘 다 추론 시점 설정이라 재학습이 필요 없다) ----------------
 # 학습된 ACT는 chunk_size=100, n_action_steps=100이다. 즉 한 번 관측하고 100
