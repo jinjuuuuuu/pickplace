@@ -66,6 +66,15 @@ GRIPPER_MID = (GRIPPER_CLOSED + GRIPPER_OPEN) / 2.0   # 0.0325
 # 값을 낮추면(예: 0.028) 더 확실히 닫으려 할 때까지 기다린다.
 GRIPPER_CLOSE_THRESH = float(os.environ.get("GRIPPER_CLOSE_THRESH", str(GRIPPER_MID)))
 
+# ⚠ 닫을 때 로봇에 실제로 명령하는 값. 데이터셋 라벨(0.025)과 다를 수 있다.
+# pick_place_collect_aloha.py는 로봇에는 컨트롤러 원본 명령(손가락을 완전히
+# 닫는 값)을 주고, 데이터셋에는 0.025로 덮어써서 저장한다. 0.025는 손가락당
+# 2.5cm = 총 개구 5.0cm로 큐브 폭과 똑같아서, 그 값을 그대로 명령하면 닿기만
+# 하고 미는 힘이 0이다 -> 쥐지 못한다. 시연이 실제로 준 값을 재현하려면 더
+# 작은 값을 명령해야 한다.
+#   GRIPPER_CLOSED_CMD=0.0    시연처럼 완전히 닫으라고 명령 (큐브가 막아 0.025에서 멈춘다)
+GRIPPER_CLOSED_CMD = float(os.environ.get("GRIPPER_CLOSED_CMD", str(GRIPPER_CLOSED)))
+
 
 def binarize_gripper(cmd):
     """정책이 낸 9차원 액션의 그리퍼 채널(7,8)을 학습 때와 같은 두 값으로 스냅."""
@@ -73,7 +82,7 @@ def binarize_gripper(cmd):
         return cmd
     cmd = np.asarray(cmd, dtype=float).copy()
     closing = float(np.mean(cmd[7:9])) < GRIPPER_CLOSE_THRESH
-    cmd[7:9] = GRIPPER_CLOSED if closing else GRIPPER_OPEN
+    cmd[7:9] = GRIPPER_CLOSED_CMD if closing else GRIPPER_OPEN
     return cmd
 TARGET_POS = [TARGET_FIXED_XY[0], TARGET_FIXED_XY[1], TARGET_Z]
 
@@ -283,7 +292,8 @@ results = []
 
 print(f"[client] starting {len(CUBE_XY_LIST)} episodes "
       f"| ACTION_REPEAT={ACTION_REPEAT} (정책 {60/ACTION_REPEAT:.0f}Hz / 물리 60Hz)"
-      f" | GRIPPER_BINARIZE={GRIPPER_BINARIZE}")
+      f" | GRIPPER_BINARIZE={GRIPPER_BINARIZE}"
+      f" (닫힘 판정 <{GRIPPER_CLOSE_THRESH} → 명령 {GRIPPER_CLOSED_CMD})")
 for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
     world.reset()
     cube.set_world_pose(position=np.array([cx, cy, 0.025], dtype=float))
