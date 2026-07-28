@@ -42,11 +42,22 @@ if [ -z "$STEPS" ]; then
   exit 1
 fi
 
-OUT="eval_sweep_${RUN_NAME}"
+# 평가 구성이 다르면 결과 폴더도 달라야 한다. 안 그러면 격자 sweep 결과를
+# 랜덤 sweep이 덮어써서 비교가 불가능해진다.
+TAG="${SWEEP_TAG:-}"
+if [ -z "$TAG" ]; then
+  if [ "${EVAL_RANDOM:-0}" -gt 0 ] 2>/dev/null; then
+    TAG="_rand${EVAL_RANDOM}s${EVAL_SEED:-0}"
+  fi
+  if [ "${EVAL_RING:-0}" = "1" ]; then TAG="${TAG}_ring"; fi
+  if [ -n "${EVAL_MARGIN:-}" ]; then TAG="${TAG}_m${EVAL_MARGIN}"; fi
+fi
+OUT="eval_sweep_${RUN_NAME}${TAG}"
 mkdir -p "$OUT"
 echo "[sweep] $RUN_NAME | 체크포인트: $(echo $STEPS | tr '\n' ' ')"
 echo "[sweep] 결과 -> $OUT/"
-echo "[sweep] EVAL_MARGIN=${EVAL_MARGIN:-기본(0.02, 분포 내부)}"
+echo "[sweep] 평가 구성: EVAL_RANDOM=${EVAL_RANDOM:-0(격자)} EVAL_SEED=${EVAL_SEED:-0}" \
+     "EVAL_MARGIN=${EVAL_MARGIN:-기본 0.02} EVAL_RING=${EVAL_RING:-0}"
 echo
 
 for S in $STEPS; do
