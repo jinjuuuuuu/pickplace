@@ -101,6 +101,9 @@ def main():
     p.add_argument("--collected", default="",
                    help="수집 데이터 폴더 (예: /data/jinju/bc_data_v11). "
                         "npz의 cube_pos를 읽어 실제 학습 좌표를 별도 패널로 그린다")
+    p.add_argument("--overlay", action="store_true",
+                   help="수집 좌표(파랑)와 평가 좌표(빨강)를 한 패널에 겹쳐 그린다 "
+                        "(--collected 와 함께 쓸 때만 의미 있음)")
     p.add_argument("--png", default="", help="산점도를 저장할 파일 경로")
     p.add_argument("--cols", type=int, default=5, help="좌표를 한 줄에 몇 개씩 찍을지")
     args = p.parse_args()
@@ -114,20 +117,28 @@ def main():
     print(f"목표        {sc.TARGET_FIXED_XY}  (MIN_DISTANCE {sc.MIN_DISTANCE}m 이내는 재추첨)")
     print()
 
-    sets = {}
-    if args.collected:
-        pts = load_collected(args.collected)
-        sets[f"수집 데이터 ({len(pts)}ep)"] = pts
-        report_density(pts, args)
-    if args.grid:
-        sets["격자 4x4"] = list(sc.EVAL_CUBE_XY_LIST)
-    for s in args.seeds:
-        sets[f"seed {s}"] = sample(args.n, s)
+    BLUE, RED = "tab:blue", "tab:red"
+    collected = load_collected(args.collected) if args.collected else None
 
-    for name, pts in sets.items():
-        print(f"[{name}]  {len(pts)}개")
-        for i in range(0, len(pts), args.cols):
-            print("   " + "  ".join(f"({x:.3f},{y:.3f})" for x, y in pts[i:i + args.cols]))
+    sets = {}          # 이름 -> [(좌표목록, 색, 범례이름), ...]
+    if collected is not None:
+        sets[f"수집 데이터 ({len(collected)}ep)"] = [(collected, BLUE, "수집")]
+        report_density(collected, args)
+    if args.overlay and collected is not None:
+        for sd in args.seeds:
+            sets[f"수집 + seed {sd}"] = [(collected, BLUE, "수집"),
+                                          (sample(args.n, sd), RED, f"평가 seed {sd}")]
+    if args.grid:
+        sets["격자 4x4"] = [(list(sc.EVAL_CUBE_XY_LIST), RED, "평가")]
+    if not args.overlay:
+        for sd in args.seeds:
+            sets[f"seed {sd}"] = [(sample(args.n, sd), RED, f"평가 seed {sd}")]
+
+    for name, layers in sets.items():
+        for pts, _c, lab in layers:
+            print(f"[{name}] {lab}  {len(pts)}개")
+            for i in range(0, len(pts), args.cols):
+                print("   " + "  ".join(f"({x:.3f},{y:.3f})" for x, y in pts[i:i + args.cols]))
         print()
 
     if args.png:
@@ -164,7 +175,7 @@ def save_png(sets, path):
     rows = (n + cols - 1) // cols
     fig, axes = plt.subplots(rows, cols, figsize=(3.4 * cols, 3.4 * rows), squeeze=False)
 
-    for ax, (name, pts) in zip(axes.flat, sets.items()):
+    for ax, (name, layers) in zip(axes.flat, sets.items()):
         # 수집 영역
         ax.add_patch(Rectangle((sc.CUBE_X_RANGE[0], sc.CUBE_Y_RANGE[0]),
                                sc.CUBE_X_RANGE[1] - sc.CUBE_X_RANGE[0],
@@ -176,11 +187,15 @@ def save_png(sets, path):
                                (sc.CUBE_X_RANGE[1] - m) - (sc.CUBE_X_RANGE[0] + m),
                                (sc.CUBE_Y_RANGE[1] - m) - (sc.CUBE_Y_RANGE[0] + m),
                                fill=False, lw=1.0, ec="tab:gray"))
-        ax.scatter([p[0] for p in pts], [p[1] for p in pts], s=26,
-                   c="tab:red", zorder=3)
+        for pts, col, lab in layers:
+            ax.scatter([p[0] for p in pts], [p[1] for p in pts], s=26,
+                       c=col, alpha=0.75 if len(layers) > 1 else 1.0,
+                       zorder=3, label=f"{lab} n={len(pts)}")
         ax.scatter([sc.TARGET_FIXED_XY[0]], [sc.TARGET_FIXED_XY[1]], marker="*",
                    s=170, c="tab:green", zorder=4)
-        ax.set_title(f"{name} (n={len(pts)})", fontsize=10)
+        if len(layers) > 1:
+            ax.legend(fontsize=7, loc="lower left", framealpha=0.9)
+        ax.set_title(name, fontsize=10)
         ax.set_xlim(0.27, 0.59)
         ax.set_ylim(-0.20, 0.31)
         ax.set_aspect("equal")
