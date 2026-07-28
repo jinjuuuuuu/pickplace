@@ -34,11 +34,60 @@ def sample(n, seed, margin=None):
     return pts
 
 
+def load_collected(src):
+    """수집 npz들의 cube_pos(실제 학습에 쓰인 큐브 시작 좌표)를 읽는다."""
+    import glob
+    import os
+    import numpy as np
+    files = sorted(glob.glob(os.path.join(src, "episode_*.npz")))
+    if not files:
+        raise SystemExit(f"에피소드가 없습니다: {src}")
+    pts = []
+    for f in files:
+        d = np.load(f)                       # 압축 npz는 요청한 키만 풀린다
+        if "cube_pos" not in d.files:
+            raise SystemExit(f"cube_pos가 없습니다: {f} (keys={d.files})")
+        c = np.asarray(d["cube_pos"], dtype=float).reshape(-1)
+        pts.append((round(float(c[0]), 4), round(float(c[1]), 4)))
+    return pts
+
+
+def report_density(pts, args):
+    """평가 좌표에서 가장 가까운 학습 좌표까지의 거리 = '얼마나 새로운 위치인가'."""
+    import math
+    w = (sc.CUBE_X_RANGE[1] - sc.CUBE_X_RANGE[0]) * 100
+    h = (sc.CUBE_Y_RANGE[1] - sc.CUBE_Y_RANGE[0]) * 100
+    print(f"[수집] 에피소드 {len(pts)}개 | 영역 {w:.0f}x{h:.0f}cm "
+          f"| 밀도 {len(pts)/(w*h):.4f}개/cm^2")
+
+    def nn(q, pool):
+        return min(math.hypot(q[0] - p[0], q[1] - p[1]) for p in pool)
+
+    # 학습 좌표끼리의 최근접 거리 (수집이 얼마나 촘촘한가)
+    if len(pts) > 1:
+        own = [min(math.hypot(a[0]-b[0], a[1]-b[1])
+                   for j, b in enumerate(pts) if j != i) for i, a in enumerate(pts)]
+        own.sort()
+        print(f"[수집] 학습 좌표 간 최근접거리: 중간값 {own[len(own)//2]*100:.2f}cm "
+              f"(최소 {own[0]*100:.2f} 최대 {own[-1]*100:.2f})")
+
+    # 평가 좌표에서 가장 가까운 학습 좌표까지 — 평가가 얼마나 '처음 보는' 위치인가
+    for name, ev in (("격자 4x4", list(sc.EVAL_CUBE_XY_LIST)),
+                     (f"랜덤 seed 0 (n={args.n})", sample(args.n, 0))):
+        ds = sorted(nn(q, pts) for q in ev)
+        print(f"[평가] {name}: 최근접 학습좌표까지 중간값 {ds[len(ds)//2]*100:.2f}cm "
+              f"(최소 {ds[0]*100:.2f} 최대 {ds[-1]*100:.2f})")
+    print()
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3])
     p.add_argument("--n", type=int, default=30)
     p.add_argument("--grid", action="store_true", help="기본 4x4 격자도 함께 표시")
+    p.add_argument("--collected", default="",
+                   help="수집 데이터 폴더 (예: /data/jinju/bc_data_v11). "
+                        "npz의 cube_pos를 읽어 실제 학습 좌표를 별도 패널로 그린다")
     p.add_argument("--png", default="", help="산점도를 저장할 파일 경로")
     p.add_argument("--cols", type=int, default=5, help="좌표를 한 줄에 몇 개씩 찍을지")
     args = p.parse_args()
@@ -53,6 +102,10 @@ def main():
     print()
 
     sets = {}
+    if args.collected:
+        pts = load_collected(args.collected)
+        sets[f"수집 데이터 ({len(pts)}ep)"] = pts
+        report_density(pts, args)
     if args.grid:
         sets["격자 4x4"] = list(sc.EVAL_CUBE_XY_LIST)
     for s in args.seeds:
