@@ -117,11 +117,33 @@ def _lin(a, b, n):
     return [a + (b - a) * i / (n - 1) for i in range(n)]
 
 
-EVAL_CUBE_XY_LIST = [
+# EVAL_RING=1: 수집 영역 '밖'의 점만 남긴다. 마진을 음수로 줘서 격자를 넓히면
+# 격자의 내부점들은 여전히 학습 영역 안에 들어가서 분포 밖 테스트가 희석된다.
+# 이 옵션을 켜면 테두리만 남아 순수한 일반화 시험이 된다.
+EVAL_RING = _os.environ.get("EVAL_RING", "0") == "1"
+
+_grid = [
     (round(x, 3), round(y, 3))
     for x in _lin(CUBE_X_RANGE[0] + EVAL_MARGIN, CUBE_X_RANGE[1] - EVAL_MARGIN, EVAL_GRID_N)
     for y in _lin(CUBE_Y_RANGE[0] + EVAL_MARGIN, CUBE_Y_RANGE[1] - EVAL_MARGIN, EVAL_GRID_N)
 ]
+
+
+def _inside_collect(x, y):
+    return (CUBE_X_RANGE[0] <= x <= CUBE_X_RANGE[1]
+            and CUBE_Y_RANGE[0] <= y <= CUBE_Y_RANGE[1])
+
+
+def _too_close_to_target(x, y):
+    dx, dy = x - TARGET_FIXED_XY[0], y - TARGET_FIXED_XY[1]
+    return (dx * dx + dy * dy) ** 0.5 < MIN_DISTANCE
+
+
+# 목표에 MIN_DISTANCE보다 가까운 점은 항상 뺀다. 수집이 그 조건을 재추첨으로
+# 배제했으므로 학습한 적 없는 종류의 상황이고, 성공률에 섞으면 해석이 흐려진다.
+EVAL_DROPPED = [p for p in _grid if _too_close_to_target(*p)
+                or (EVAL_RING and _inside_collect(*p))]
+EVAL_CUBE_XY_LIST = [p for p in _grid if p not in EVAL_DROPPED]
 
 # === 기록 주기 / 솎기 ========================================================
 # Isaac Sim World 기본 physics_dt=1/60이고 world.step()마다 한 프레임 저장한다.
@@ -157,7 +179,11 @@ if __name__ == "__main__":
           f"{RECORD_HZ//TRAIN_STRIDE}Hz)")
     _where = (f"수집 영역에서 {EVAL_MARGIN*100:.0f}cm 안쪽" if EVAL_MARGIN >= 0
               else f"수집 영역보다 {-EVAL_MARGIN*100:.0f}cm 밖 [!] 학습 분포 밖")
-    print(f"평가 위치     {len(EVAL_CUBE_XY_LIST)}개 ({EVAL_GRID_N}x{EVAL_GRID_N} 격자, {_where})")
+    print(f"평가 위치     {len(EVAL_CUBE_XY_LIST)}개 ({EVAL_GRID_N}x{EVAL_GRID_N} 격자, {_where}"
+          f"{', 테두리만' if EVAL_RING else ''})")
+    if EVAL_DROPPED:
+        print(f"              제외 {len(EVAL_DROPPED)}개: "
+              + " ".join(f"({x:.3f},{y:.3f})" for x, y in EVAL_DROPPED))
     for i in range(0, len(EVAL_CUBE_XY_LIST), EVAL_GRID_N):
         print("              " + "  ".join(
             f"({x:.3f},{y:.3f})" for x, y in EVAL_CUBE_XY_LIST[i:i + EVAL_GRID_N]))
