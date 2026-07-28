@@ -19,7 +19,7 @@ import struct
 import pickle
 import numpy as np
 
-# 🔧 lerobot-train --output_dir 의 체크포인트. ls 로 실제 경로 확인 후 맞출 것.
+# * lerobot-train --output_dir 의 체크포인트. ls 로 실제 경로 확인 후 맞출 것.
 # 코드를 고치지 않고 환경변수로도 지정 가능:
 #   MODEL_PATH=/data/jinju/act_pickplace_s3/checkpoints/100000/pretrained_model python act_policy_server.py
 MODEL_PATH = os.environ.get(
@@ -34,7 +34,7 @@ PORT = int(os.environ.get("POLICY_PORT", "5555"))
 
 # --- 폐루프 옵션 (둘 다 추론 시점 설정이라 재학습이 필요 없다) ----------------
 # 학습된 ACT는 chunk_size=100, n_action_steps=100이다. 즉 한 번 관측하고 100
-# 정책스텝을 개루프로 실행한다 — ACTION_REPEAT=3이면 300 시뮬스텝(5초)을 눈을
+# 정책스텝을 개루프로 실행한다 - ACTION_REPEAT=3이면 300 시뮬스텝(5초)을 눈을
 # 감고 움직이는 셈이라, 파지 직전 마지막 몇 cm를 보정할 수 없다.
 #
 #   N_ACTION_STEPS=10        chunk 100개 중 10개만 쓰고 다시 관측 (0.5초마다 보정)
@@ -160,7 +160,7 @@ srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind((HOST, PORT))
 srv.listen(1)
-print(f"[server] listening on {HOST}:{PORT} — 이제 Isaac Sim 클라이언트를 실행하세요.")
+print(f"[server] listening on {HOST}:{PORT} - 이제 Isaac Sim 클라이언트를 실행하세요.")
 
 try:
     while True:

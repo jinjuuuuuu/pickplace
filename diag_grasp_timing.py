@@ -77,7 +77,7 @@ def main():
 
     a = np.array(at_close)
     axy = np.linalg.norm(a[:, :2], axis=1)
-    print(f"\n[diag] 시연 {len(a)}개 요약 — 그리퍼를 닫는 순간의 cube - ee")
+    print(f"\n[diag] 시연 {len(a)}개 요약 - 그리퍼를 닫는 순간의 cube - ee")
     print(f"    dx  평균 {a[:,0].mean():+.4f}  표준편차 {a[:,0].std():.4f}")
     print(f"    dy  평균 {a[:,1].mean():+.4f}  표준편차 {a[:,1].std():.4f}")
     print(f"    dz  평균 {a[:,2].mean():+.4f}  표준편차 {a[:,2].std():.4f}")

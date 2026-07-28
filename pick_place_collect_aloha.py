@@ -1,6 +1,6 @@
 # pick_place_collect_aloha.py  (Isaac Sim 5.1)
 # ---------------------------------------------------------------------------
-# BC 데이터 수집 v9 — ALOHA 표준 세팅: "큐브 랜덤 + 목표 고정" 50 에피소드
+# BC 데이터 수집 v9 - ALOHA 표준 세팅: "큐브 랜덤 + 목표 고정" 50 에피소드
 #
 # 왜 이렇게 바꿨나
 # ---------------
@@ -22,7 +22,7 @@
 # lerobot 기본값 100k x 8이 45 에폭이 된다 (v5는 2.6이었다).
 #
 # 성공률이 올라온 뒤에 목표 지점도 랜덤으로 넓히는 게 다음 단계다. 순서를
-# 뒤집지 말 것 — 변량을 하나씩 풀어야 뭐가 원인인지 알 수 있다.
+# 뒤집지 말 것 - 변량을 하나씩 풀어야 뭐가 원인인지 알 수 있다.
 #
 # 실행(워크스테이션):  /data/isaacsim/python.sh pick_place_collect_aloha.py
 # === 설정 ===================================================================
@@ -91,7 +91,7 @@ from isaacsim.robot.manipulators.examples.franka.controllers import PickPlaceCon
 # 단, 랜덤 범위(CUBE_*_RANGE)를 바꾼 뒤에 이어받으면 서로 다른 분포의 에피소드가
 # 한 데이터셋에 섞인다. 그럴 때는 FRESH_START=1로 기존 파일을 지우고 새로 모을 것:
 #     FRESH_START=1 /data/isaacsim/python.sh pick_place_collect_aloha.py
-# 기본값은 0(이어받기)이다 — 실수로 수집분을 날리지 않기 위함.
+# 기본값은 0(이어받기)이다 - 실수로 수집분을 날리지 않기 위함.
 # ---------------------------------------------------------------------------
 FRESH_START = os.environ.get("FRESH_START", "0") == "1"
 
@@ -259,7 +259,7 @@ cube_material = cube.get_applied_visual_material()
 
 def randomize_domain():
     """DOMAIN_RANDOMIZE=False면 색·조명을 매 에피소드 같은 값으로 고정한다.
-    (끄는 게 아니라 고정값을 다시 써준다 — 이전 에피소드 값이 남지 않도록)"""
+    (끄는 게 아니라 고정값을 다시 써준다 - 이전 에피소드 값이 남지 않도록)"""
     if DOMAIN_RANDOMIZE:
         cube_material.set_color(np.array([random.uniform(0,1), random.uniform(0,1), random.uniform(0,1)]))
         dome_light.GetIntensityAttr().Set(random.uniform(500.0, 2500.0))
@@ -348,7 +348,7 @@ for ep in range(N_TO_COLLECT):
         clean_action = action_to_full(action, current_joint_pos, n_dof)
         
         # 2. 데이터셋 저장용 액션 -> 그리퍼 이진화
-        # ⚠ 여기 값이 로봇에 실제로 가는 값(아래 apply_action(action))과 같아야 한다.
+        # [!] 여기 값이 로봇에 실제로 가는 값(아래 apply_action(action))과 같아야 한다.
         #   v10까지는 라벨을 0.025로 저장했는데, 0.025는 손가락당 2.5cm =
         #   총 개구 5.0cm로 큐브 폭과 정확히 같아서 미는 힘이 0이다. 정책이 배운
         #   대로 명령하면 닿기만 하고 못 쥐어서 성공률이 0%였다. 컨트롤러가 로봇에
@@ -444,7 +444,7 @@ for ep in range(N_TO_COLLECT):
     if raw_closing_cmds:
         lo, hi = min(raw_closing_cmds), max(raw_closing_cmds)
         note = "" if abs(hi - GRIPPER_CLOSED) < 0.01 else \
-            f"  ⚠ 라벨({GRIPPER_CLOSED})과 차이가 크다 — 이 값으로 라벨을 맞출 것"
+            f"  [!] 라벨({GRIPPER_CLOSED})과 차이가 크다 - 이 값으로 라벨을 맞출 것"
         print(f"[collect]   저장 {len(ep_obs)}프레임 | 닫는 명령 원본 "
               f"{lo:.4f}~{hi:.4f} (라벨 {GRIPPER_CLOSED}){note}")
 

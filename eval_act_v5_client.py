@@ -10,7 +10,7 @@
 #   창2:  /data/isaacsim/python.sh ~/pickplace/eval_act_v5_client.py
 #
 # 결과: eval_results_act_v5.json (성공률, 파지 기하, 검은프레임 카운터 등).
-# 씬 설정과 평가 격자는 scene_config.py에서 온다 — 수집 스크립트와 같은 파일을
+# 씬 설정과 평가 격자는 scene_config.py에서 온다 - 수집 스크립트와 같은 파일을
 # 읽으므로 두 씬이 어긋날 수 없다(어긋남이 v5~v10 실패의 주원인이었다).
 # ---------------------------------------------------------------------------
 import os
@@ -47,7 +47,7 @@ PORT = int(os.environ.get("POLICY_PORT", "5555"))
 # 영향이 없다(수집도 headless+render였다). 다만 GUI를 켜면 느려진다.
 #   HEADLESS=0 C:\isaacsim\python.bat -u eval_act_v5_client.py
 HEADLESS = os.environ.get("HEADLESS", "1") != "0"
-# ⚠ 렌더는 headless와 별개로 반드시 True. 예전엔 world.step(render=RENDER)
+# [!] 렌더는 headless와 별개로 반드시 True. 예전엔 world.step(render=RENDER)
 # 였는데, headless에서 render=False면 Camera.get_rgba()가 빈 배열을 돌려줘서
 # grab_rgb()가 온통 검은 이미지를 정책에 먹였다(=무조건 0%). 수집 스크립트는
 # RENDER=True로 돌았으니 평가도 같아야 한다. 아래 blank 카운터로 재발을 감시한다.
@@ -57,7 +57,7 @@ MAX_STEPS = 1500
 # 학습 데이터를 몇 프레임마다 솎았는지(subsample_dataset.py --stride).
 # 물리는 60Hz로 도는데 정책은 (60/stride)Hz로 판단하도록 학습됐으므로, 액션
 # 하나를 stride번 유지해야 로봇이 학습 때와 같은 속도로 움직인다. 이 값이
-# 틀리면 에러 없이 그냥 실패한다 — 그래서 scene_config.TRAIN_STRIDE를 기본값으로
+# 틀리면 에러 없이 그냥 실패한다 - 그래서 scene_config.TRAIN_STRIDE를 기본값으로
 # 쓴다(예전엔 기본값이 1이라 환경변수를 잊으면 조용히 3배 빠르게 움직였다).
 # 솎지 않은 옛 모델(v5 등)을 평가할 때만 ACTION_REPEAT=1로 덮어쓸 것.
 ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", str(TRAIN_STRIDE))))
@@ -65,7 +65,7 @@ ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", str(TRAIN_STRIDE))))
 # 학습 데이터의 그리퍼 값은 두 가지뿐이다(수집 스크립트에서 강제 이진화).
 # ACT는 회귀 모델이라 그 사이 값을 내놓는데, 큐브가 5cm라 손가락이 조금만
 # 벌어져도 못 잡는다. 그래서 수집 때와 동일하게 이진화해서 명령한다.
-# 값은 scene_config에서 온다 — 라벨과 명령이 어긋난 것이 v10을 0%로 만든 원인이다.
+# 값은 scene_config에서 온다 - 라벨과 명령이 어긋난 것이 v10을 0%로 만든 원인이다.
 #   GRIPPER_BINARIZE=0        이진화 끄기 (정책 원본값 그대로 명령)
 #   GRIPPER_CLOSE_THRESH=...  닫힘 판정 임계값 덮어쓰기
 #   GRIPPER_CLOSED_CMD=...    닫을 때 명령하는 값 덮어쓰기
@@ -91,7 +91,7 @@ def binarize_gripper(cmd):
 TARGET_POS = [TARGET_FIXED_XY[0], TARGET_FIXED_XY[1], TARGET_Z]
 
 # 학습 영역을 고르게 덮는 4x4 격자. scene_config가 CUBE_*_RANGE에서 계산하므로
-# 영역을 바꾸면 평가 위치도 따라온다 — 예전엔 손으로 맞춰야 해서 15개 중 8개가
+# 영역을 바꾸면 평가 위치도 따라온다 - 예전엔 손으로 맞춰야 해서 15개 중 8개가
 # 학습 영역 밖이었다(학습한 적 없는 곳이라 무조건 실패).
 # 학습은 연속 랜덤이므로 이 16개는 전부 "처음 보는 정확한 좌표"다.
 CUBE_XY_LIST = list(EVAL_CUBE_XY_LIST)
@@ -148,14 +148,14 @@ for attempt in range(60):
             print("[client] 서버가 아직 안 떴어요. act_policy_server.py 를 먼저 실행하세요. 재시도 중...")
         time.sleep(1.0)
 if not connected:
-    raise SystemExit("[client] 서버 연결 실패 — act_policy_server.py 가 실행 중인지 확인하세요.")
+    raise SystemExit("[client] 서버 연결 실패 - act_policy_server.py 가 실행 중인지 확인하세요.")
 print("[client] connected to policy server")
 
 
 # ---- 이미지 전송 최적화 (원격 서버로 돌릴 때 SSH 터널이 병목이 된다) --------
 # 두 가지를 한다. 둘 다 정책이 보는 픽셀을 바꾸지 않는다:
-#   1) 무손실 압축 — 320x240 RGB 원본 230KB를 PNG로 줄인다(바닥이 균일해 잘 줄어든다).
-#   2) 필요 없는 프레임은 아예 안 보낸다 — n_action_steps=100이면 정책은 100번
+#   1) 무손실 압축 - 320x240 RGB 원본 230KB를 PNG로 줄인다(바닥이 균일해 잘 줄어든다).
+#   2) 필요 없는 프레임은 아예 안 보낸다 - n_action_steps=100이면 정책은 100번
 #      질의 중 1번만 새 관측을 쓴다(나머지는 큐에서 꺼냄). 서버가 다음 호출에
 #      이미지가 필요한지 알려주므로, 필요 없을 때는 상태값만 보낸다.
 # 서버가 need_obs를 안 주는 구버전이면 매번 보내는 쪽으로 안전하게 동작한다.
@@ -256,7 +256,7 @@ over_cam_prim.GetClippingRangeAttr().Set(Gf.Vec2f(CAM_CLIP_NEAR, CAM_CLIP_FAR))
 UsdGeom.XformCommonAPI(over_xform).SetTranslate(Gf.Vec3d(*OVER_TRANSLATE))
 UsdGeom.XformCommonAPI(over_xform).SetRotate(Gf.Vec3f(*OVER_ROTATE))
 
-# 조명도 수집과 같은 값이어야 한다. 예전엔 여기가 1000, 수집이 1500이었다 —
+# 조명도 수집과 같은 값이어야 한다. 예전엔 여기가 1000, 수집이 1500이었다 -
 # DOMAIN_RANDOMIZE=False라 정책은 1500만 본 적이 있으므로 학습 분포 밖이었다.
 dome_light = UsdLux.DomeLight.Define(stage, "/World/DR_DomeLight")
 dome_light.GetIntensityAttr().Set(LIGHT_INTENSITY)
@@ -388,7 +388,7 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
             if ee_at_close is None:
                 ee_at_close = [round(float(ee[0]), 3), round(float(ee[1]), 3)]
                 # 수집 데이터의 obs[18:21](cube_rel = cube - ee)과 같은 양. z까지
-                # 봐야 한다 — XY가 맞아도 손이 큐브보다 높으면 허공을 잡는다.
+                # 봐야 한다 - XY가 맞아도 손이 큐브보다 높으면 허공을 잡는다.
                 cube_rel_at_close = [round(float(v), 4) for v in (gt_cube - ee)]
             grasp_attempted = True
         gripper_open = jp[7] > GRIPPER_CLOSING_RAW_THRESH
@@ -434,7 +434,7 @@ summary = {
     "episodes": results,
 }
 if _frame_stats["blank"]:
-    print(f"[client] ⚠ 검은 프레임 {_frame_stats['blank']}/{_frame_stats['total']}개 — "
+    print(f"[client] [!] 검은 프레임 {_frame_stats['blank']}/{_frame_stats['total']}개 - "
           f"정책이 이미지를 못 본 것이므로 이 성공률은 무의미하다 (RENDER 설정 확인)")
 with open("eval_results_act_v5.json", "w") as f:
     json.dump(summary, f, indent=2)

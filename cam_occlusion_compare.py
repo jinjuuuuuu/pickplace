@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# cam_occlusion_compare.py — 천장 수직뷰 vs 프론트 경사뷰 가림 비교 (PPT 캡처용)
+# cam_occlusion_compare.py - 천장 수직뷰 vs 프론트 경사뷰 가림 비교 (PPT 캡처용)
 # ---------------------------------------------------------------------------
 # 실행:
 #   "C:\isaacsim\python.bat" -u "C:\Users\user\Desktop\claude_jetbot\cam_occlusion_compare.py"
@@ -208,21 +208,21 @@ except Exception:
 BAR = 30
 canvas = Image.new("RGB", (PANEL_W * len(MOMENTS), (PANEL_H + BAR) * 2 + BAR), (18, 18, 18))
 dr = ImageDraw.Draw(canvas)
-dr.text((10, 6), f"큐브 ({CUBE_XY[0]:.3f}, {CUBE_XY[1]:.3f}) — 동일 궤적, 동일 순간",
+dr.text((10, 6), f"큐브 ({CUBE_XY[0]:.3f}, {CUBE_XY[1]:.3f}) - 동일 궤적, 동일 순간",
         fill=(255, 255, 255), font=font)
 
 for row, cfg in enumerate((OLD, NEW)):
     c = np.array(counts[cfg["prim"]])
     vis = int((c > 0).sum())
     y0 = BAR + row * (PANEL_H + BAR)
-    dr.text((10, y0 + 5), f"{cfg['label']}  —  큐브가 보인 프레임 "
+    dr.text((10, y0 + 5), f"{cfg['label']}  -  큐브가 보인 프레임 "
                           f"{vis / max(1, len(c)) * 100:.1f}%",
             fill=(255, 220, 100) if row == 0 else (120, 255, 180), font=font)
     for col, m in enumerate(MOMENTS):
         img, n = shots[cfg["prim"]][m]
         panel = Image.fromarray(img).resize((PANEL_W, PANEL_H), Image.NEAREST)
         canvas.paste(panel, (col * PANEL_W, y0 + BAR))
-        tag = f"{m}  —  큐브 {n}px" + ("  ← 안 보임" if n == 0 else "")
+        tag = f"{m}  -  큐브 {n}px" + ("  ← 안 보임" if n == 0 else "")
         dr.rectangle([col * PANEL_W, y0 + BAR, col * PANEL_W + PANEL_W - 1, y0 + BAR + 24],
                      fill=(0, 0, 0))
         dr.text((col * PANEL_W + 8, y0 + BAR + 3), tag,
