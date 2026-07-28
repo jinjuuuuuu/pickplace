@@ -45,3 +45,39 @@ __pycache__/
 # ===== 로컬 설정 / 캐시 =====
 .claude/
 .DS_Store
+
+# ===== USD 에셋 (NVIDIA 배포본, 로컬에만 둔다 — franka/는 38MB) =====
+*.usd
+*.usda
+*.usdc
+franka/
+jetbot/
+
+# ===== 문서 / 발표자료 =====
+*.pptx
+*.docx
+*.xlsx
+
+# ===== 이전 세대 스크립트·결과 (로컬 보관, 저장소에는 v11 파이프라인만) =====
+# 저장소에 두는 파일은 README의 '파일 구성' 표에 있는 것들뿐이다.
+ACT/
+perception/
+eval_results_*.json
+eval_compare_*.py
+eval_act_ee_check.py
+eval_act_hybrid.py
+eval_act_verbose.py
+bc_train*.py
+bc_deploy*.py
+act_hub_deploy_isaac.py
+run_act_inference.py
+push_to_hub.py
+convert_to_mcap.py
+diag_vision_policy.py
+cam_check_current.py
+cam_over_sweep.py
+wrist_cam_preview.py
+inspect_jetbot.py
+jetbot_record_demo.py
+pick_place_isaac.py
+README_jetbot_mcap.md
