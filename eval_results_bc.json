@@ -1,0 +1,191 @@
+{
+  "model": "BC vision (ResNet18, frame-stacked x3)",
+  "n_episodes": 15,
+  "n_success": 0,
+  "success_rate": 0.0,
+  "avg_steps_success": null,
+  "avg_min_xy_err": 0.26141333333333333,
+  "n_grasp_attempted": 15,
+  "episodes": [
+    {
+      "episode": 0,
+      "cube_xy": [
+        0.344,
+        0.156
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.0356,
+      "min_xy_err": 0.3435,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 1,
+      "cube_xy": [
+        0.505,
+        0.195
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.345,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 2,
+      "cube_xy": [
+        0.485,
+        0.065
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2155,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 3,
+      "cube_xy": [
+        0.5,
+        0.009
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.159,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 4,
+      "cube_xy": [
+        0.424,
+        0.041
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2056,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 5,
+      "cube_xy": [
+        0.346,
+        -0.243
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.1799,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 6,
+      "cube_xy": [
+        0.418,
+        0.114
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2764,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 7,
+      "cube_xy": [
+        0.53,
+        0.063
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2151,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 8,
+      "cube_xy": [
+        0.529,
+        0.182
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.3333,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 9,
+      "cube_xy": [
+        0.355,
+        0.183
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.036,
+      "min_xy_err": 0.3629,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 10,
+      "cube_xy": [
+        0.499,
+        0.183
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.333,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 11,
+      "cube_xy": [
+        0.375,
+        0.014
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2054,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 12,
+      "cube_xy": [
+        0.318,
+        0.042
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2646,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 13,
+      "cube_xy": [
+        0.359,
+        0.132
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.3153,
+      "grasp_attempted": true
+    },
+    {
+      "episode": 14,
+      "cube_xy": [
+        0.343,
+        -0.094
+      ],
+      "success": false,
+      "steps": 1500,
+      "max_lift": 0.025,
+      "min_xy_err": 0.1667,
+      "grasp_attempted": true
+    }
+  ]
+}

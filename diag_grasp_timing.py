@@ -16,7 +16,7 @@
 #   [joint_pos(9), joint_vel(9), cube_rel(3), target_rel(3), cube_pos(3)]
 #   cube_rel = cube_pos - ee_pos  <- 평가의 (cube - ee)와 같은 양
 #
-# 실행:  python diag_grasp_timing.py --src /data/jinju/bc_data_v10
+# 실행:  python diag_grasp_timing.py --src /data/jinju/bc_data_v11
 # ---------------------------------------------------------------------------
 import os
 import glob
@@ -24,14 +24,16 @@ import argparse
 
 import numpy as np
 
+from scene_config import GRIPPER_CLOSING_RAW_THRESH
+
 CUBE_REL = slice(18, 21)
 GRIPPER_IDX = 7
-CLOSE_THRESH = 0.035      # 평가의 grasp 판정과 동일
+CLOSE_THRESH = GRIPPER_CLOSING_RAW_THRESH
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--src", default="/data/jinju/bc_data_v10")
+    p.add_argument("--src", default="/data/jinju/bc_data_v11")
     p.add_argument("--n", type=int, default=0, help="앞 N개만 (0=전부)")
     args = p.parse_args()
 

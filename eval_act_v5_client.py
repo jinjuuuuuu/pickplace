@@ -9,8 +9,9 @@
 #   창1:  conda activate lerobot && python ~/pickplace/act_policy_server.py
 #   창2:  /data/isaacsim/python.sh ~/pickplace/eval_act_v5_client.py
 #
-# 결과: eval_results_act_v5.json (성공률 등). CUBE_XY_LIST는 학습 영역(20x20cm)을
-# 덮는 4x4 격자 → v4 목록과는 좌표가 다르므로 v4 수치와 직접 비교하지 말 것.
+# 결과: eval_results_act_v5.json (성공률, 파지 기하, 검은프레임 카운터 등).
+# 씬 설정과 평가 격자는 scene_config.py에서 온다 — 수집 스크립트와 같은 파일을
+# 읽으므로 두 씬이 어긋날 수 없다(어긋남이 v5~v10 실패의 주원인이었다).
 # ---------------------------------------------------------------------------
 import os
 import json
@@ -30,6 +31,8 @@ from scene_config import (
     LIGHT_INTENSITY, CUBE_COLOR, CUBE_SIZE, CUBE_MASS, CUBE_Z,
     TARGET_FIXED_XY, TARGET_Z, START_POSE, TRAIN_STRIDE,
     SUCCESS_XY_TOL, SUCCESS_MIN_LIFT, EVAL_CUBE_XY_LIST,
+    GRIPPER_CLOSED, GRIPPER_OPEN, GRIPPER_CLOSING_RAW_THRESH,
+    GRIPPER_CLOSE_THRESH as GRIPPER_CLOSE_THRESH_DEFAULT,
 )
 
 HOST = "127.0.0.1"
@@ -51,28 +54,19 @@ MAX_STEPS = 1500
 # 솎지 않은 옛 모델(v5 등)을 평가할 때만 ACTION_REPEAT=1로 덮어쓸 것.
 ACTION_REPEAT = max(1, int(os.environ.get("ACTION_REPEAT", str(TRAIN_STRIDE))))
 
-# 학습 데이터의 그리퍼 값은 0.025(닫힘)/0.04(열림) 두 가지뿐이다
-# (pick_place_collect_aloha.py에서 강제 이진화). ACT는 회귀 모델이라 그 사이 값을
-# 내놓는데, 큐브가 5cm라 손가락이 0.025보다 조금만 벌어져도 아예 못 잡는다.
-# 그래서 수집 때와 동일하게 이진화해서 명령한다. 끄려면 GRIPPER_BINARIZE=0.
+# 학습 데이터의 그리퍼 값은 두 가지뿐이다(수집 스크립트에서 강제 이진화).
+# ACT는 회귀 모델이라 그 사이 값을 내놓는데, 큐브가 5cm라 손가락이 조금만
+# 벌어져도 못 잡는다. 그래서 수집 때와 동일하게 이진화해서 명령한다.
+# 값은 scene_config에서 온다 — 라벨과 명령이 어긋난 것이 v10을 0%로 만든 원인이다.
+#   GRIPPER_BINARIZE=0        이진화 끄기 (정책 원본값 그대로 명령)
+#   GRIPPER_CLOSE_THRESH=...  닫힘 판정 임계값 덮어쓰기
+#   GRIPPER_CLOSED_CMD=...    닫을 때 명령하는 값 덮어쓰기
+#
+# 라벨이 0.025였던 옛 모델(v10 이전)을 평가할 때는 아래처럼 덮어쓸 것:
+#   GRIPPER_CLOSE_THRESH=0.0325 GRIPPER_CLOSED_CMD=0.0 ...
 GRIPPER_BINARIZE = os.environ.get("GRIPPER_BINARIZE", "1") != "0"
-GRIPPER_CLOSED, GRIPPER_OPEN = 0.025, 0.04
-GRIPPER_MID = (GRIPPER_CLOSED + GRIPPER_OPEN) / 2.0   # 0.0325
-
-# 닫힘으로 판정하는 임계값. ACT는 0.04 -> 0.025로 부드럽게 내려오는 값을 내는데,
-# 중간값(0.0325)에서 닫으면 그 하강 구간의 절반 지점에 이미 완전히 닫힌다.
-# 손이 큐브에 닿기 전에 닫으면 닫힌 손으로 큐브를 스치기만 한다(측정: 16/16
-# 에피소드에서 닫은 지점이 최소접근 지점보다 평균 3.1cm 멀었다).
-# 값을 낮추면(예: 0.028) 더 확실히 닫으려 할 때까지 기다린다.
-GRIPPER_CLOSE_THRESH = float(os.environ.get("GRIPPER_CLOSE_THRESH", str(GRIPPER_MID)))
-
-# ⚠ 닫을 때 로봇에 실제로 명령하는 값. 데이터셋 라벨(0.025)과 다를 수 있다.
-# pick_place_collect_aloha.py는 로봇에는 컨트롤러 원본 명령(손가락을 완전히
-# 닫는 값)을 주고, 데이터셋에는 0.025로 덮어써서 저장한다. 0.025는 손가락당
-# 2.5cm = 총 개구 5.0cm로 큐브 폭과 똑같아서, 그 값을 그대로 명령하면 닿기만
-# 하고 미는 힘이 0이다 -> 쥐지 못한다. 시연이 실제로 준 값을 재현하려면 더
-# 작은 값을 명령해야 한다.
-#   GRIPPER_CLOSED_CMD=0.0    시연처럼 완전히 닫으라고 명령 (큐브가 막아 0.025에서 멈춘다)
+GRIPPER_CLOSE_THRESH = float(os.environ.get(
+    "GRIPPER_CLOSE_THRESH", str(GRIPPER_CLOSE_THRESH_DEFAULT)))
 GRIPPER_CLOSED_CMD = float(os.environ.get("GRIPPER_CLOSED_CMD", str(GRIPPER_CLOSED)))
 
 
@@ -84,6 +78,8 @@ def binarize_gripper(cmd):
     closing = float(np.mean(cmd[7:9])) < GRIPPER_CLOSE_THRESH
     cmd[7:9] = GRIPPER_CLOSED_CMD if closing else GRIPPER_OPEN
     return cmd
+
+
 TARGET_POS = [TARGET_FIXED_XY[0], TARGET_FIXED_XY[1], TARGET_Z]
 
 # 학습 영역을 고르게 덮는 4x4 격자. scene_config가 CUBE_*_RANGE에서 계산하므로
@@ -101,9 +97,6 @@ if _fixed:
     _fx, _fy = (float(v) for v in _fixed.split(","))
     CUBE_XY_LIST = [(_fx, _fy)] * int(os.environ.get("N_EPISODES", "10"))
     print(f"[client] 고정 지점 평가 모드: cube=({_fx:.3f},{_fy:.3f}) x {len(CUBE_XY_LIST)}회")
-
-WRIST_CAM_PRIM = "/World/Franka/panda_hand/WristCam/Camera"
-OVER_CAM_PRIM = "/World/OverheadCam/Camera"
 
 
 # ---- 소켓 헬퍼 (서버와 동일 프로토콜) ----
@@ -339,14 +332,14 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
         ee = get_ee_position(franka)
         ee_cube = float(np.linalg.norm(ee[:2] - gt_cube[:2]))
         min_ee_cube = ee_cube if min_ee_cube is None else min(min_ee_cube, ee_cube)
-        if jp[7] < 0.035:
+        if jp[7] < GRIPPER_CLOSING_RAW_THRESH:
             if ee_at_close is None:
                 ee_at_close = [round(float(ee[0]), 3), round(float(ee[1]), 3)]
                 # 수집 데이터의 obs[18:21](cube_rel = cube - ee)과 같은 양. z까지
                 # 봐야 한다 — XY가 맞아도 손이 큐브보다 높으면 허공을 잡는다.
                 cube_rel_at_close = [round(float(v), 4) for v in (gt_cube - ee)]
             grasp_attempted = True
-        gripper_open = jp[7] > 0.035
+        gripper_open = jp[7] > GRIPPER_CLOSING_RAW_THRESH
 
         if cube_target_xy < SUCCESS_XY_TOL and max_lift > (0.025 + SUCCESS_MIN_LIFT) and gripper_open:
             success = True

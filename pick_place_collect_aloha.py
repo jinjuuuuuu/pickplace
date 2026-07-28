@@ -36,19 +36,17 @@ from scene_config import (
     OVER_FOCAL, OVER_TRANSLATE, OVER_ROTATE,
     LIGHT_INTENSITY, CUBE_COLOR, CUBE_SIZE, CUBE_MASS, CUBE_Z, TARGET_Z,
     TARGET_FIXED_XY, TARGET_JITTER, CUBE_X_RANGE, CUBE_Y_RANGE, MIN_DISTANCE,
-    START_POSE, SUCCESS_XY_TOL, SUCCESS_MIN_LIFT,
+    START_POSE, SUCCESS_XY_TOL, SUCCESS_MIN_LIFT, NUM_EPISODES,
+    GRIPPER_CLOSED, GRIPPER_OPEN, GRIPPER_CLOSING_RAW_THRESH,
 )
 
 MAX_STEPS       = 2000
 HEADLESS        = True
 RENDER          = True
-SAVE_PATH       = r"/data/jinju/bc_data_v10"
+SAVE_PATH       = r"/data/jinju/bc_data_v11"
 
 PLACE_Z_OFFSET  = 0.02
 WARMUP_STEPS    = 200
-
-# ---- ALOHA 표준 세팅 (v9의 핵심) ------------------------------------------
-NUM_EPISODES  = 50           # ALOHA 표준 규모
 
 # 도메인 랜덤화. v8은 매 에피소드 큐브 색을 완전 랜덤 RGB로 바꿨는데, ALOHA
 # 표준 세팅에는 그런 게 없다. 50개로 색까지 배우게 하면 부담이 크므로 끈다.
@@ -322,6 +320,9 @@ for ep in range(N_TO_COLLECT):
 
     ep_obs, ep_actions, ep_wrist, ep_over = [], [], [], []
     skipped_ep = max_cube_z = max_joint_jump = max_joint_vel = ee_path_xy = 0
+    # 컨트롤러가 '닫을 때' 로봇에 실제로 주는 원본 값. 라벨(GRIPPER_CLOSED)이
+    # 이 값과 크게 다르면 v10과 같은 실패가 재발하므로 매 에피소드 찍어서 감시한다.
+    raw_closing_cmds = []
     prev_arm_q = prev_ee_xy = ee_start_xy = None
     controller_done = False; step = 0
 
@@ -346,11 +347,18 @@ for ep in range(N_TO_COLLECT):
         action = controller.forward(picking_position=cube_pos, placing_position=place_target, current_joint_positions=current_joint_pos)
         clean_action = action_to_full(action, current_joint_pos, n_dof)
         
-        # 2. 데이터셋 저장용 액션 -> 그리퍼 이진화 (안전하게 0.025 / 0.04)
+        # 2. 데이터셋 저장용 액션 -> 그리퍼 이진화
+        # ⚠ 여기 값이 로봇에 실제로 가는 값(아래 apply_action(action))과 같아야 한다.
+        #   v10까지는 라벨을 0.025로 저장했는데, 0.025는 손가락당 2.5cm =
+        #   총 개구 5.0cm로 큐브 폭과 정확히 같아서 미는 힘이 0이다. 정책이 배운
+        #   대로 명령하면 닿기만 하고 못 쥐어서 성공률이 0%였다. 컨트롤러가 로봇에
+        #   주는 닫힘 명령은 그보다 작은 값이므로, 라벨도 GRIPPER_CLOSED(0.0)로 둔다.
         stored_action = clean_action.copy()
-        is_closing = stored_action[7] < 0.035
-        stored_action[7] = 0.025 if is_closing else 0.04
-        stored_action[8] = 0.025 if is_closing else 0.04
+        is_closing = stored_action[7] < GRIPPER_CLOSING_RAW_THRESH
+        stored_action[7] = GRIPPER_CLOSED if is_closing else GRIPPER_OPEN
+        stored_action[8] = GRIPPER_CLOSED if is_closing else GRIPPER_OPEN
+        if is_closing:
+            raw_closing_cmds.append(float(clean_action[7]))
 
         if is_valid(obs, stored_action):
             ep_obs.append(obs)
@@ -431,6 +439,14 @@ for ep in range(N_TO_COLLECT):
         save_data["images_over"]  = np.array(ep_over,  dtype=np.uint8)
     ep_save_path = os.path.join(SAVE_PATH, f"episode_{ep + SAVE_INDEX_OFFSET:04d}.npz")
     np.savez_compressed(ep_save_path, **save_data)
+
+    # 라벨과 실제 명령이 일치하는지 감시 (v10을 0%로 만든 원인이 이 불일치였다)
+    if raw_closing_cmds:
+        lo, hi = min(raw_closing_cmds), max(raw_closing_cmds)
+        note = "" if abs(hi - GRIPPER_CLOSED) < 0.01 else \
+            f"  ⚠ 라벨({GRIPPER_CLOSED})과 차이가 크다 — 이 값으로 라벨을 맞출 것"
+        print(f"[collect]   저장 {len(ep_obs)}프레임 | 닫는 명령 원본 "
+              f"{lo:.4f}~{hi:.4f} (라벨 {GRIPPER_CLOSED}){note}")
 
 if len(all_episodes) == 0:
     if SAVE_INDEX_OFFSET > 0:

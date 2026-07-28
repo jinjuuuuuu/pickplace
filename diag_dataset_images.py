@@ -59,7 +59,7 @@ def save_png(img, path, scale=8):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--src", default="/data/jinju/bc_data_v9")
+    p.add_argument("--src", default="/data/jinju/bc_data_v11")
     p.add_argument("--n-episodes", type=int, default=3)
     p.add_argument("--frames", default="0,60,120,240",
                    help="확인할 프레임 인덱스(원본 60Hz 기준)")

@@ -1,0 +1,220 @@
+{
+  "model": "ACT (approach+grasp) + scripted PickPlaceController handoff (lift/move/place)",
+  "n_episodes": 15,
+  "n_success": 0,
+  "success_rate": 0.0,
+  "n_handed_off": 15,
+  "avg_min_xy_err": 0.2614866666666667,
+  "episodes": [
+    {
+      "episode": 0,
+      "cube_xy": [
+        0.344,
+        0.156
+      ],
+      "success": false,
+      "steps": 729,
+      "max_lift": 0.025,
+      "min_xy_err": 0.3435,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 148
+    },
+    {
+      "episode": 1,
+      "cube_xy": [
+        0.505,
+        0.195
+      ],
+      "success": false,
+      "steps": 925,
+      "max_lift": 0.025,
+      "min_xy_err": 0.345,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 344
+    },
+    {
+      "episode": 2,
+      "cube_xy": [
+        0.485,
+        0.065
+      ],
+      "success": false,
+      "steps": 934,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2155,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 353
+    },
+    {
+      "episode": 3,
+      "cube_xy": [
+        0.5,
+        0.009
+      ],
+      "success": false,
+      "steps": 962,
+      "max_lift": 0.025,
+      "min_xy_err": 0.159,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 381
+    },
+    {
+      "episode": 4,
+      "cube_xy": [
+        0.424,
+        0.041
+      ],
+      "success": false,
+      "steps": 958,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2056,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 377
+    },
+    {
+      "episode": 5,
+      "cube_xy": [
+        0.346,
+        -0.243
+      ],
+      "success": false,
+      "steps": 938,
+      "max_lift": 0.025,
+      "min_xy_err": 0.1799,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 357
+    },
+    {
+      "episode": 6,
+      "cube_xy": [
+        0.418,
+        0.114
+      ],
+      "success": false,
+      "steps": 946,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2764,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 365
+    },
+    {
+      "episode": 7,
+      "cube_xy": [
+        0.53,
+        0.063
+      ],
+      "success": false,
+      "steps": 941,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2151,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 360
+    },
+    {
+      "episode": 8,
+      "cube_xy": [
+        0.529,
+        0.182
+      ],
+      "success": false,
+      "steps": 945,
+      "max_lift": 0.025,
+      "min_xy_err": 0.3333,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 364
+    },
+    {
+      "episode": 9,
+      "cube_xy": [
+        0.355,
+        0.183
+      ],
+      "success": false,
+      "steps": 937,
+      "max_lift": 0.025,
+      "min_xy_err": 0.3632,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 356
+    },
+    {
+      "episode": 10,
+      "cube_xy": [
+        0.499,
+        0.183
+      ],
+      "success": false,
+      "steps": 942,
+      "max_lift": 0.025,
+      "min_xy_err": 0.333,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 361
+    },
+    {
+      "episode": 11,
+      "cube_xy": [
+        0.375,
+        0.014
+      ],
+      "success": false,
+      "steps": 939,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2062,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 358
+    },
+    {
+      "episode": 12,
+      "cube_xy": [
+        0.318,
+        0.042
+      ],
+      "success": false,
+      "steps": 934,
+      "max_lift": 0.025,
+      "min_xy_err": 0.2646,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 353
+    },
+    {
+      "episode": 13,
+      "cube_xy": [
+        0.359,
+        0.132
+      ],
+      "success": false,
+      "steps": 929,
+      "max_lift": 0.025,
+      "min_xy_err": 0.3153,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 348
+    },
+    {
+      "episode": 14,
+      "cube_xy": [
+        0.343,
+        -0.094
+      ],
+      "success": false,
+      "steps": 938,
+      "max_lift": 0.025,
+      "min_xy_err": 0.1667,
+      "grasp_attempted": true,
+      "handed_off": true,
+      "handoff_step": 357
+    }
+  ]
+}

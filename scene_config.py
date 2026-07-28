@@ -63,22 +63,47 @@ TARGET_Z = 0.025
 TARGET_FIXED_XY = (0.500, -0.150)
 TARGET_JITTER = 0.005           # ±5mm. 성공 허용오차(5cm)의 1/10.
 
-# 큐브 랜덤 영역 = 정확히 20x20cm, 중심 (0.425, 0.150).
+# 큐브 랜덤 **수집** 영역 = 24x24cm, 중심 (0.425, 0.150).
 # y를 전부 양수로 두는 이유: 목표가 (0.500,-0.150)이라 MIN_DISTANCE 조건을
 # 영역 '전체'가 만족해야 사각형이 깎이지 않는다. 이 영역의 목표까지 최소거리는
-# 0.202m. 대신 y<0 쪽에서 집는 건 배우지 못한다.
-CUBE_X_RANGE = (0.325, 0.525)
-CUBE_Y_RANGE = (0.05, 0.25)
+# 0.186m. 대신 y<0 쪽에서 집는 건 배우지 못한다.
+#
+# v10은 이 영역이 20x20cm였고 평가 격자가 그 경계에 딱 걸쳐 있었다. 결과:
+# 경계행(y=0.050)이 1/4, 내부는 11/12 (전체 75%). 연속 랜덤 수집에서 경계점은
+# 이웃 데이터가 한쪽에만 있어서 학습이 얇아진다. 그래서 수집 영역을 평가
+# 격자보다 EVAL_MARGIN만큼 넓게 잡는다 -> 평가 위치가 전부 내부점이 된다.
+CUBE_X_RANGE = (0.305, 0.545)
+CUBE_Y_RANGE = (0.03, 0.27)
 MIN_DISTANCE = 0.15             # 큐브가 목표에 붙으면 태스크가 성립 안 함
+
+# 수집 규모. 영역이 400 -> 576cm^2로 넓어졌으므로 v10과 같은 위치당 밀도를
+# 유지하려면 47 * 576/400 = 68개가 필요하다. 70개로 잡는다.
+NUM_EPISODES = 70
 
 START_POSE = [0.0, -0.3, 0.0, -2.5, 0.0, 2.2, 0.8, 0.04, 0.04]
 
+# === 그리퍼 =================================================================
+# ⚠ v10에서 0%를 만든 마지막 원인. 수집 스크립트는 로봇에 컨트롤러 원본 명령을
+#   주면서(franka.apply_action(action)) 데이터셋에는 0.025로 덮어써 저장했다.
+#   0.025는 손가락당 2.5cm = 총 개구 5.0cm로 큐브 폭(5cm)과 정확히 같아서,
+#   정책이 배운 대로 0.025를 명령하면 닿기만 하고 미는 힘이 0이다 -> 못 쥔다.
+#   같은 체크포인트에서 닫힘 명령만 0.0으로 바꾸자 0% -> 75%가 됐다.
+# 그래서 라벨과 실제 명령을 모두 이 두 값으로 통일한다.
+GRIPPER_CLOSED = 0.0            # 완전히 닫으라고 명령 -> 큐브가 막아 0.025에서 멈추며 쥔다
+GRIPPER_OPEN = 0.04
+# 정책 출력(회귀값)을 이진화할 때 닫힘으로 볼 임계값
+GRIPPER_CLOSE_THRESH = (GRIPPER_CLOSED + GRIPPER_OPEN) / 2.0    # 0.02
+# 수집 시 원본 액션이 '닫는 중'인지 판정하는 값 (컨트롤러 원본값 기준)
+GRIPPER_CLOSING_RAW_THRESH = 0.035
+
 # === 평가 위치 ==============================================================
-# 학습 영역을 고르게 덮는 NxN 격자. 범위에서 자동으로 계산하므로 CUBE_*_RANGE를
-# 바꾸면 평가 위치도 따라온다 (예전엔 손으로 맞춰야 해서 평가 위치의 절반이
-# 학습 영역 밖이었다 = 무조건 실패).
+# 수집 영역에서 EVAL_MARGIN만큼 안쪽으로 들어온 NxN 격자. 범위에서 자동
+# 계산하므로 CUBE_*_RANGE를 바꾸면 평가 위치도 따라온다 (예전엔 손으로 맞춰야
+# 해서 평가 위치의 절반이 학습 영역 밖이었다 = 무조건 실패).
 # 학습은 연속 랜덤이므로 이 격자점들은 전부 '처음 보는 정확한 좌표'다.
+# EVAL_MARGIN=0.02면 격자가 v10 평가와 똑같은 16개 좌표가 되어 직접 비교된다.
 EVAL_GRID_N = 4
+EVAL_MARGIN = 0.02
 
 
 def _lin(a, b, n):
@@ -89,8 +114,8 @@ def _lin(a, b, n):
 
 EVAL_CUBE_XY_LIST = [
     (round(x, 3), round(y, 3))
-    for x in _lin(CUBE_X_RANGE[0], CUBE_X_RANGE[1], EVAL_GRID_N)
-    for y in _lin(CUBE_Y_RANGE[0], CUBE_Y_RANGE[1], EVAL_GRID_N)
+    for x in _lin(CUBE_X_RANGE[0] + EVAL_MARGIN, CUBE_X_RANGE[1] - EVAL_MARGIN, EVAL_GRID_N)
+    for y in _lin(CUBE_Y_RANGE[0] + EVAL_MARGIN, CUBE_Y_RANGE[1] - EVAL_MARGIN, EVAL_GRID_N)
 ]
 
 # === 기록 주기 / 솎기 ========================================================
@@ -117,11 +142,16 @@ if __name__ == "__main__":
     print(f"오버헤드      pos={OVER_TRANSLATE} rot={OVER_ROTATE} focal={OVER_FOCAL}")
     print(f"손목          pos={WRIST_TRANSLATE} rot={WRIST_ROTATE} focal={WRIST_FOCAL}")
     print(f"조명          {LIGHT_INTENSITY}")
-    print(f"큐브 영역     x{CUBE_X_RANGE} y{CUBE_Y_RANGE} "
+    print(f"수집 영역     x{CUBE_X_RANGE} y{CUBE_Y_RANGE} "
           f"({(CUBE_X_RANGE[1]-CUBE_X_RANGE[0])*100:.0f}x"
-          f"{(CUBE_Y_RANGE[1]-CUBE_Y_RANGE[0])*100:.0f}cm)")
+          f"{(CUBE_Y_RANGE[1]-CUBE_Y_RANGE[0])*100:.0f}cm) x {NUM_EPISODES}회")
     print(f"목표          {TARGET_FIXED_XY} ±{TARGET_JITTER*1000:.0f}mm")
-    print(f"평가 위치     {len(EVAL_CUBE_XY_LIST)}개 ({EVAL_GRID_N}x{EVAL_GRID_N} 격자)")
+    print(f"그리퍼        닫힘 {GRIPPER_CLOSED} / 열림 {GRIPPER_OPEN} "
+          f"(이진화 임계 {GRIPPER_CLOSE_THRESH})")
+    print(f"솎기          stride {TRAIN_STRIDE} ({RECORD_HZ}Hz -> "
+          f"{RECORD_HZ//TRAIN_STRIDE}Hz)")
+    print(f"평가 위치     {len(EVAL_CUBE_XY_LIST)}개 ({EVAL_GRID_N}x{EVAL_GRID_N} 격자, "
+          f"수집 영역에서 {EVAL_MARGIN*100:.0f}cm 안쪽)")
     for i in range(0, len(EVAL_CUBE_XY_LIST), EVAL_GRID_N):
         print("              " + "  ".join(
             f"({x:.3f},{y:.3f})" for x, y in EVAL_CUBE_XY_LIST[i:i + EVAL_GRID_N]))

@@ -1,0 +1,9 @@
+# ACT 학습/배포에 필요한 파이썬 패키지
+# 학습(act_train.py)은 일반 Python+GPU, 배포/수집은 Isaac Sim 파이썬에 설치.
+torch
+torchvision
+numpy
+einops
+opencv-python
+matplotlib
+# h5py 불필요: 데이터는 numpy(.npz)로 저장/로드 (Windows Isaac 파이썬 DLL 충돌 회피)
