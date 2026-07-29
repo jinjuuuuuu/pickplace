@@ -272,6 +272,8 @@ for epoch in range(1, EPOCHS + 1):
 csv_f.close()
 if writer:
     writer.close()
-print(f"\n[bc_train] 완료. best val {best_val:.6f} | 체크포인트 {OUT_DIR}\\checkpoints")
+print(f"\n[bc_train] 완료. best val {best_val:.6f} | "
+      f"체크포인트 {os.path.join(OUT_DIR, 'checkpoints')}")
 print("[bc_train] val loss는 순위 참고용일 뿐이다 — 성공률은 평가로만 확인된다:")
-print("           python bc_policy_server.py  +  C:\\isaacsim\\python.bat -u eval_act_v5_client.py")
+print("           MODEL_PATH=<ckpt> python bc_policy_server.py  +  "
+      "<isaacsim python> -u eval_act_v5_client.py")

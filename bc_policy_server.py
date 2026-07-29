@@ -145,10 +145,18 @@ ns = ckpt.get("norm_stats")
 if ns is None:
     ns = torch.load(os.path.join(os.path.dirname(MODEL_PATH), "..", "norm_stats.pt"),
                     map_location="cpu", weights_only=False)
-pro_mean = np.asarray(ns["proprio_mean"], dtype=np.float32)
-pro_std = np.asarray(ns["proprio_std"], dtype=np.float32)
-act_mean = np.asarray(ns["act_mean"], dtype=np.float32)
-act_std = np.asarray(ns["act_std"], dtype=np.float32)
+def _np(x):
+    # 체크포인트를 map_location=cuda로 열면 통계 텐서도 GPU에 올라온다.
+    # 그대로 np.asarray하면 "can't convert cuda:0 device type tensor"로 죽는다.
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy().astype(np.float32)
+    return np.asarray(x, dtype=np.float32)
+
+
+pro_mean = _np(ns["proprio_mean"])
+pro_std = _np(ns["proprio_std"])
+act_mean = _np(ns["act_mean"])
+act_std = _np(ns["act_std"])
 
 print(f"[bc_server] {MODEL_PATH}")
 print(f"[bc_server] epoch={ckpt.get('epoch')} val_loss={ckpt.get('val_loss'):.6f} "
