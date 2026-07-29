@@ -40,7 +40,10 @@ PROPRIO_DIM = int(os.environ.get("PROPRIO_DIM", "9"))
 EPOCHS = int(os.environ.get("EPOCHS", "100"))
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "64"))
 LR = float(os.environ.get("LR", "1e-3"))
-VAL_RATIO = float(os.environ.get("VAL_RATIO", "0.1"))
+# 기본값 0 = 검증 분할 없음. lerobot-train(ACT)에는 검증 분할이 없어서, BC만
+# 10%를 빼면 학습 에피소드가 67 vs 60이 되어 성공률 비교가 공정하지 않다.
+# 학습 곡선을 보고 싶을 때만 VAL_RATIO=0.1 처럼 켤 것.
+VAL_RATIO = float(os.environ.get("VAL_RATIO", "0"))
 SAVE_EVERY = int(os.environ.get("SAVE_EVERY", "10"))
 SEED = int(os.environ.get("SEED", "0"))
 # =============================================================================
@@ -100,13 +103,17 @@ torch.save(norm_stats, os.path.join(OUT_DIR, "norm_stats.pt"))
 # ============================================================================
 rng = np.random.default_rng(SEED)
 ep_perm = rng.permutation(n_eps)
-n_val_ep = max(1, int(round(n_eps * VAL_RATIO)))
+n_val_ep = int(round(n_eps * VAL_RATIO))
 val_eps = set(ep_perm[:n_val_ep].tolist())
-is_val = np.isin(ep_index, list(val_eps))
+is_val = np.isin(ep_index, list(val_eps)) if val_eps else np.zeros(N, dtype=bool)
 val_idx = np.nonzero(is_val)[0]
 train_idx = np.nonzero(~is_val)[0]
-print(f"[bc_train] 검증: 에피소드 {sorted(val_eps)} ({len(val_idx)} 프레임) | "
-      f"학습 {len(train_idx)} 프레임")
+if val_eps:
+    print(f"[bc_train] 검증: 에피소드 {sorted(val_eps)} ({len(val_idx)} 프레임) | "
+          f"학습 {len(train_idx)} 프레임")
+else:
+    print(f"[bc_train] 검증 분할 없음 (VAL_RATIO=0) — ACT(lerobot-train)와 동일하게 "
+          f"{n_eps}개 에피소드 {len(train_idx)} 프레임 전부 학습")
 
 # 청크 타깃 인덱스 (N, CHUNK_H). 미리 만들어 두면 배치마다 gather 한 번이면 된다.
 chunk_idx = np.minimum(np.arange(N)[:, None] + np.arange(CHUNK_H)[None, :],
@@ -243,14 +250,16 @@ for epoch in range(1, EPOCHS + 1):
         tr.append(loss.item())
     scheduler.step()
 
-    policy.eval()
     va = []
-    with torch.no_grad():
-        for i in range(0, len(val_idx_t), BATCH_SIZE):
-            w, o, pro, tgt = make_batch(val_idx_t[i:i + BATCH_SIZE])
-            va.append(loss_fn(policy(w, o, pro), tgt).item())
+    if len(val_idx_t):
+        policy.eval()
+        with torch.no_grad():
+            for i in range(0, len(val_idx_t), BATCH_SIZE):
+                w, o, pro, tgt = make_batch(val_idx_t[i:i + BATCH_SIZE])
+                va.append(loss_fn(policy(w, o, pro), tgt).item())
 
-    tl, vl = float(np.mean(tr)), float(np.mean(va))
+    tl = float(np.mean(tr))
+    vl = float(np.mean(va)) if va else float("nan")
     dt = time.time() - t_start
     lr_now = optimizer.param_groups[0]["lr"]
     csv_w.writerow([epoch, tl, vl, lr_now, round(dt, 2)])
@@ -262,7 +271,9 @@ for epoch in range(1, EPOCHS + 1):
         print(f"Epoch {epoch:3d}/{EPOCHS} | train {tl:.6f} | val {vl:.6f} | "
               f"lr {lr_now:.2e} | {dt:.1f}s", flush=True)
 
-    if vl < best_val:
+    # 검증 분할이 없으면 best.pt를 만들지 않는다. val loss 없이 "best"를 고르면
+    # 그냥 train loss 최저 = 마지막 에폭이라 이름만 best인 파일이 된다.
+    if va and vl < best_val:
         best_val = vl
         save_ckpt(os.path.join(OUT_DIR, "checkpoints", "best.pt"), epoch, vl)
     if epoch % SAVE_EVERY == 0 or epoch == EPOCHS:
@@ -272,7 +283,8 @@ for epoch in range(1, EPOCHS + 1):
 csv_f.close()
 if writer:
     writer.close()
-print(f"\n[bc_train] 완료. best val {best_val:.6f} | "
+best_txt = f"best val {best_val:.6f}" if np.isfinite(best_val) else "검증 없음"
+print(f"\n[bc_train] 완료. {best_txt} | "
       f"체크포인트 {os.path.join(OUT_DIR, 'checkpoints')}")
 print("[bc_train] val loss는 순위 참고용일 뿐이다 — 성공률은 평가로만 확인된다:")
 print("           MODEL_PATH=<ckpt> python bc_policy_server.py  +  "
