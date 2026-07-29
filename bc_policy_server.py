@@ -132,7 +132,10 @@ ckpt = torch.load(MODEL_PATH, map_location=device, weights_only=False)
 CHUNK_H = int(ckpt["chunk_h"])
 JOINT_DIM = int(ckpt["joint_dim"])
 PROPRIO_DIM = int(ckpt["proprio_dim"])
-IMG_SIZE = int(ckpt["img_size"])
+if "img_h" in ckpt:
+    IMG_H, IMG_W = int(ckpt["img_h"]), int(ckpt["img_w"])
+else:                                  # 84x84만 굽던 옛 체크포인트
+    IMG_H = IMG_W = int(ckpt["img_size"])
 FPS = int(ckpt.get("fps", 20))
 REPLAN_EVERY = int(os.environ.get("REPLAN_EVERY", "20"))
 REPLAN_EVERY = max(1, min(REPLAN_EVERY, CHUNK_H))
@@ -161,7 +164,7 @@ act_std = _np(ns["act_std"])
 print(f"[bc_server] {MODEL_PATH}")
 print(f"[bc_server] epoch={ckpt.get('epoch')} val_loss={ckpt.get('val_loss'):.6f} "
       f"| chunk_h={CHUNK_H} ({CHUNK_H/FPS:.1f}s @{FPS}Hz) joint_dim={JOINT_DIM} "
-      f"proprio_dim={PROPRIO_DIM} img={IMG_SIZE}")
+      f"proprio_dim={PROPRIO_DIM} img HxW={IMG_H}x{IMG_W}")
 print(f"[bc_server] REPLAN_EVERY={REPLAN_EVERY} "
       f"({REPLAN_EVERY/FPS:.2f}초마다 재관측; {CHUNK_H}로 주면 완전 개루프) | device={device}")
 print(f"[bc_server] 그리퍼 이진화는 클라이언트(binarize_gripper)가 한다 — 여기선 원본을 보낸다")
@@ -173,7 +176,8 @@ queue = collections.deque()
 def prep(img):
     """prepare_bc_data.resize_uint8과 같은 경로 — 학습·추론 전처리가 어긋나면 조용히 실패한다."""
     t = torch.from_numpy(np.ascontiguousarray(img)).permute(2, 0, 1)      # HWC uint8 -> CHW
-    t = TF.resize(t, [IMG_SIZE, IMG_SIZE], antialias=True)
+    if tuple(t.shape[1:]) != (IMG_H, IMG_W):        # 원본 해상도로 학습했으면 리사이즈 없음
+        t = TF.resize(t, [IMG_H, IMG_W], antialias=True)
     return t.unsqueeze(0).to(device).float().div_(255.0)
 
 

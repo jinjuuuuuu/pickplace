@@ -55,7 +55,11 @@ torch.manual_seed(SEED)
 # 1. 캐시 로드 + 정규화 통계
 # ============================================================================
 meta = np.load(os.path.join(CACHE_DIR, "meta.npz"), allow_pickle=True)
-IMG_SIZE = int(meta["img_size"])
+if "img_h" in meta:
+    IMG_H, IMG_W = int(meta["img_h"]), int(meta["img_w"])
+else:                                  # 84x84만 굽던 옛 캐시
+    IMG_H = IMG_W = int(meta["img_size"])
+TAG = f"{IMG_H}x{IMG_W}"
 FPS = int(meta["fps"])
 REPO_ID = str(meta["repo_id"])
 states = meta["states"].astype(np.float32)
@@ -66,8 +70,16 @@ if states.shape[1] != PROPRIO_DIM:
     raise SystemExit(f"[bc_train] state 차원 불일치: 데이터 {states.shape[1]} vs "
                      f"PROPRIO_DIM {PROPRIO_DIM}. 환경변수로 맞추거나 캐시를 다시 구울 것.")
 
-wrist = np.load(os.path.join(CACHE_DIR, f"wrist_{IMG_SIZE}.npy"), mmap_mode="r")
-over = np.load(os.path.join(CACHE_DIR, f"over_{IMG_SIZE}.npy"), mmap_mode="r")
+def _open_cam(short):
+    for name in (f"{short}_{TAG}.npy", f"{short}_{IMG_H}.npy"):
+        p = os.path.join(CACHE_DIR, name)
+        if os.path.isfile(p):
+            return np.load(p, mmap_mode="r")
+    raise SystemExit(f"[bc_train] 캐시 파일이 없다: {CACHE_DIR}\\{short}_{TAG}.npy")
+
+
+wrist = _open_cam("wrist")
+over = _open_cam("over")
 
 N = len(states)
 JOINT_DIM = actions.shape[1]
@@ -77,7 +89,7 @@ n_eps = int(ep_index.max()) + 1
 pro_mean, pro_std = states.mean(0), states.std(0) + 1e-6
 act_mean, act_std = actions.mean(0), actions.std(0) + 1e-6
 
-print(f"[bc_train] {REPO_ID} | 프레임 {N} | 에피소드 {n_eps} | {FPS}Hz | img {IMG_SIZE}")
+print(f"[bc_train] {REPO_ID} | 프레임 {N} | 에피소드 {n_eps} | {FPS}Hz | img HxW={TAG}")
 print(f"[bc_train] chunk_h={CHUNK_H} ({CHUNK_H/FPS:.1f}초) joint_dim={JOINT_DIM} "
       f"action_dim={ACTION_DIM} proprio_dim={PROPRIO_DIM}")
 
@@ -94,7 +106,7 @@ norm_stats = {
     "proprio_mean": torch.tensor(pro_mean), "proprio_std": torch.tensor(pro_std),
     "act_mean": torch.tensor(act_mean), "act_std": torch.tensor(act_std),
     "chunk_h": CHUNK_H, "joint_dim": JOINT_DIM, "proprio_dim": PROPRIO_DIM,
-    "img_size": IMG_SIZE, "fps": FPS, "repo_id": REPO_ID,
+    "img_h": IMG_H, "img_w": IMG_W, "fps": FPS, "repo_id": REPO_ID,
 }
 torch.save(norm_stats, os.path.join(OUT_DIR, "norm_stats.pt"))
 
@@ -123,28 +135,36 @@ act_norm_t = torch.from_numpy((actions - act_mean) / act_std).to(device)
 chunk_idx_t = torch.from_numpy(chunk_idx).to(device)
 pro_norm_t = torch.from_numpy((states - pro_mean) / pro_std).to(device)
 
-# 이미지는 1GB 남짓이라 VRAM에 통째로 올린다(배치마다 PCIe 전송이 사라진다).
-# 안 올라가면 CPU 고정메모리로 떨어진다.
+# 84x84면 1GB라 VRAM에 통째로 올릴 수 있다(배치마다 PCIe 전송이 사라진다).
+# 320x240이면 11GB라 못 올린다 -> 디스크 memmap에서 배치 단위로 읽는다.
 img_bytes = wrist.nbytes + over.nbytes
-def _to_device(arr, name):
-    t = torch.from_numpy(np.ascontiguousarray(arr))
-    if device.type == "cuda":
-        free, _ = torch.cuda.mem_get_info()
-        if free > img_bytes * 1.3:
-            return t.to(device)
-    return t.pin_memory() if device.type == "cuda" else t
+GPU_RESIDENT = False
+if device.type == "cuda":
+    free, _ = torch.cuda.mem_get_info()
+    GPU_RESIDENT = free > img_bytes * 1.3
 
 t0 = time.time()
-wrist_t = _to_device(wrist, "wrist")
-over_t = _to_device(over, "over")
-print(f"[bc_train] 이미지 {img_bytes/1e9:.2f}GB → {wrist_t.device} ({time.time()-t0:.1f}s)")
+if GPU_RESIDENT:
+    wrist_t = torch.from_numpy(np.ascontiguousarray(wrist)).to(device)
+    over_t = torch.from_numpy(np.ascontiguousarray(over)).to(device)
+    print(f"[bc_train] 이미지 {img_bytes/1e9:.2f}GB → VRAM 상주 ({time.time()-t0:.1f}s)")
+else:
+    wrist_t = over_t = None
+    print(f"[bc_train] 이미지 {img_bytes/1e9:.2f}GB — VRAM에 안 올라가서 "
+          f"디스크 memmap에서 배치 단위로 읽는다 (에폭 시간이 늘어난다)")
 
 
 def make_batch(idx_t):
     """uint8 NHWC -> float NCHW(0~1), 정규화된 proprio, 평탄화된 청크 타깃."""
-    img_idx = idx_t if idx_t.device == wrist_t.device else idx_t.to(wrist_t.device)
-    w = wrist_t[img_idx].to(device, non_blocking=True).permute(0, 3, 1, 2).float().div_(255.0)
-    o = over_t[img_idx].to(device, non_blocking=True).permute(0, 3, 1, 2).float().div_(255.0)
+    if GPU_RESIDENT:
+        w = wrist_t[idx_t].permute(0, 3, 1, 2).float().div_(255.0)
+        o = over_t[idx_t].permute(0, 3, 1, 2).float().div_(255.0)
+    else:
+        idx_np = idx_t.cpu().numpy()
+        w = torch.from_numpy(wrist[idx_np]).to(device, non_blocking=True) \
+                 .permute(0, 3, 1, 2).float().div_(255.0)
+        o = torch.from_numpy(over[idx_np]).to(device, non_blocking=True) \
+                 .permute(0, 3, 1, 2).float().div_(255.0)
     pro = pro_norm_t[idx_t]
     tgt = act_norm_t[chunk_idx_t[idx_t]].reshape(len(idx_t), -1)
     return w, o, pro, tgt
@@ -220,7 +240,8 @@ def save_ckpt(path, epoch, val_loss):
     torch.save({
         "epoch": int(epoch), "policy": policy.state_dict(),
         "proprio_dim": PROPRIO_DIM, "action_dim": ACTION_DIM,
-        "chunk_h": CHUNK_H, "joint_dim": JOINT_DIM, "img_size": IMG_SIZE,
+        "chunk_h": CHUNK_H, "joint_dim": JOINT_DIM,
+        "img_h": IMG_H, "img_w": IMG_W,
         "fps": FPS, "repo_id": REPO_ID, "val_loss": float(val_loss),
         "norm_stats": norm_stats,
     }, path)

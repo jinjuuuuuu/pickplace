@@ -26,17 +26,32 @@ import os
 import numpy as np
 
 
-def resize_uint8(frame_hwc, size):
+def parse_size(s):
+    """'84' -> (84,84) / '320x240' -> (240,320) / 'native' -> None(원본 그대로)."""
+    s = str(s).strip().lower()
+    if s in ("native", "source", "orig"):
+        return None
+    if "x" in s:
+        w, h = s.split("x")
+        return (int(h), int(w))          # 내부는 (H, W)
+    n = int(s)
+    return (n, n)
+
+
+def resize_uint8(frame_hwc, hw):
     """학습·추론이 같은 코드로 리사이즈해야 한다. bc_policy_server.py도 이걸 쓴다."""
+    if hw is None or tuple(frame_hwc.shape[:2]) == tuple(hw):
+        return np.ascontiguousarray(frame_hwc)
+
     import torch
     import torchvision.transforms.functional as TF
 
     t = torch.from_numpy(np.ascontiguousarray(frame_hwc)).permute(2, 0, 1)  # HWC->CHW uint8
-    t = TF.resize(t, [size, size], antialias=True)
+    t = TF.resize(t, list(hw), antialias=True)
     return t.permute(1, 2, 0).numpy()
 
 
-def decode_video(path, n_expect, size, out_path):
+def decode_video(path, n_expect, hw, out_path):
     import av
     from tqdm import tqdm
 
@@ -48,11 +63,12 @@ def decode_video(path, n_expect, size, out_path):
             f"[prepare] 프레임 수 불일치: {os.path.basename(path)} = {n_stream}, "
             f"parquet 행 = {n_expect}. 순차 디코딩 정렬 가정이 깨졌다.")
 
+    out_hw = hw or (stream.codec_context.height, stream.codec_context.width)
     arr = np.lib.format.open_memmap(out_path, mode="w+", dtype=np.uint8,
-                                    shape=(n_expect, size, size, 3))
+                                    shape=(n_expect, out_hw[0], out_hw[1], 3))
     i = 0
     for frame in tqdm(container.decode(video=0), total=n_expect, desc=os.path.basename(out_path)):
-        arr[i] = resize_uint8(frame.to_ndarray(format="rgb24"), size)
+        arr[i] = resize_uint8(frame.to_ndarray(format="rgb24"), hw)
         i += 1
     container.close()
     if i != n_expect:
@@ -64,7 +80,8 @@ def decode_video(path, n_expect, size, out_path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-id", default="jamongsteak/pickplace_vision_v11_s3")
-    ap.add_argument("--img-size", type=int, default=84)
+    # '84'(정사각) / '320x240'(WxH, ACT와 동일) / 'native'(원본 그대로)
+    ap.add_argument("--img-size", default="84")
     ap.add_argument("--out", default=None, help="기본: ./bc_cache_<데이터셋이름>_<크기>")
     ap.add_argument("--local-dir", default=None, help="이미 받아둔 스냅샷 폴더가 있으면 지정")
     args = ap.parse_args()
@@ -100,9 +117,17 @@ def main():
     if not np.all(np.diff(ep_index) >= 0):
         raise SystemExit("[prepare] episode_index가 단조 증가가 아니다 — 순차 정렬 가정이 깨졌다.")
 
+    src_h = int(info["features"]["observation.images.wrist"]["shape"][0])
+    src_w = int(info["features"]["observation.images.wrist"]["shape"][1])
+    hw = parse_size(args.img_size) or (src_h, src_w)
+    tag = f"{hw[0]}x{hw[1]}"
+    n_bytes = n_frames * hw[0] * hw[1] * 3 * 2
+    print(f"[prepare] 캐시 해상도 HxW={tag} (원본 {src_h}x{src_w}) | "
+          f"두 카메라 합계 {n_bytes/1e9:.1f}GB")
+
     out = args.out or os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        f"bc_cache_{args.repo_id.split('/')[-1]}_{args.img_size}")
+        f"bc_cache_{args.repo_id.split('/')[-1]}_{tag}")
     os.makedirs(out, exist_ok=True)
 
     cams = {}
@@ -114,19 +139,19 @@ def main():
         if len(vids) != 1:
             raise SystemExit(f"[prepare] {key}: mp4가 {len(vids)}개다. 이 스크립트는 "
                              f"단일 파일(chunk 하나)만 가정한다.")
-        cams[short] = decode_video(vids[0], n_frames, args.img_size,
-                                   os.path.join(out, f"{short}_{args.img_size}.npy"))
+        cams[short] = decode_video(vids[0], n_frames, hw,
+                                   os.path.join(out, f"{short}_{tag}.npy"))
 
     np.savez(os.path.join(out, "meta.npz"),
              states=states, actions=actions, episode_index=ep_index,
-             fps=np.int64(fps), img_size=np.int64(args.img_size),
+             fps=np.int64(fps), img_h=np.int64(hw[0]), img_w=np.int64(hw[1]),
              repo_id=np.array(args.repo_id))
 
     # --- 검증 출력: 검은 프레임/가려짐을 학습 전에 잡는다 (프로젝트 진단 순서 1번) ---
     print(f"\n[prepare] 저장 완료 → {out}")
     for short, arr in cams.items():
         sample = arr[:: max(1, n_frames // 2000)].astype(np.float32)
-        per_frame_std = arr[:: max(1, n_frames // 2000)].reshape(-1, args.img_size ** 2 * 3).std(1)
+        per_frame_std = arr[:: max(1, n_frames // 2000)].reshape(-1, hw[0] * hw[1] * 3).std(1)
         n_flat = int((per_frame_std < 1.0).sum())
         print(f"  {short:5s} {arr.shape} | mean {sample.mean():6.1f} std {sample.std():5.1f} "
               f"| 평탄(std<1) 프레임 {n_flat}/{len(per_frame_std)}")
