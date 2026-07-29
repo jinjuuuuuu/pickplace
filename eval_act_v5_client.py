@@ -411,8 +411,12 @@ for ep, (cx, cy) in enumerate(CUBE_XY_LIST):
           f"min_ee_cube={min_ee_cube:.3f} cube_rel_at_close={cube_rel_at_close}")
 
 n_success = sum(r["success"] for r in results)
+# 어떤 정책을 붙였는지는 서버 쪽이 정한다(ACT든 BC든 프로토콜이 같다). 결과
+# 파일명과 라벨을 환경변수로 열어두지 않으면 BC 평가가 ACT 결과를 덮어쓴다.
+#   MODEL_LABEL="BC SmallCNN v11_s3 best" OUT_JSON=eval_results_bc_v11.json ...
+OUT_JSON = os.environ.get("OUT_JSON", "eval_results_act_v5.json")
 summary = {
-    "model": "ACT v5 (grid-sampled, via policy server)",
+    "model": os.environ.get("MODEL_LABEL", "ACT v5 (grid-sampled, via policy server)"),
     "action_repeat": ACTION_REPEAT,
     "n_episodes": len(results),
     "n_success": n_success,
@@ -436,8 +440,9 @@ summary = {
 if _frame_stats["blank"]:
     print(f"[client] [!] 검은 프레임 {_frame_stats['blank']}/{_frame_stats['total']}개 - "
           f"정책이 이미지를 못 본 것이므로 이 성공률은 무의미하다 (RENDER 설정 확인)")
-with open("eval_results_act_v5.json", "w") as f:
+with open(OUT_JSON, "w") as f:
     json.dump(summary, f, indent=2)
+print(f"[client] 결과 저장 -> {OUT_JSON}")
 
 print(f"[client] DONE success_rate={summary['success_rate']:.2f} ({n_success}/{len(results)}) "
       f"grasp_attempted={summary['n_grasp_attempted']}/{len(results)}")
