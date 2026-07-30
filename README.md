@@ -90,10 +90,10 @@ python act_policy_server.py                      # MODEL_PATH=... 로 체크포�
 | **`eval_act_v5_client.py`** | Isaac Sim 평가 클라이언트. 16개 새 위치에서 성공률 + 파지 기하 측정 |
 | **`diag_dataset_images.py`** | 수집 데이터 진단 — 밝기 통계, **큐브가 몇 픽셀로 보이는지** |
 | **`diag_grasp_timing.py`** | 시연의 파지 기하 측정 — 그리퍼를 닫는 순간의 손-큐브 상대좌표 |
-| **`cam_tune.py`** | GUI로 카메라 잡기. 수집 영역 네 모서리에서 큐브 픽셀 실시간 표시 |
-| **`cam_occlusion_compare.py`** | 카메라 구도 비교 캡처 (두 카메라를 한 씬에 넣고 같은 궤적 촬영) |
 
 > 💡 데이터셋 · 모델 · 이미지 · 로그는 git에 올리지 않습니다. 데이터는 각 머신에서 생성하고 Hugging Face로 공유합니다.
+>
+> 💡 카메라 값을 잡거나 그림을 뽑는 데 쓴 **일회성 도구**(`cam_tune.py`, `cam_occlusion_compare.py`, `show_eval_positions.py`, `plot_sweep.py`, `eval_sweep.sh`, `fix_checkpoint_for_isaacsim.py`)는 저장소에 두지 않습니다. 결과는 이미 `scene_config.py`와 이 문서에 반영돼 있습니다.
 
 <br>
 

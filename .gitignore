@@ -81,3 +81,19 @@ inspect_jetbot.py
 jetbot_record_demo.py
 pick_place_isaac.py
 README_jetbot_mcap.md
+
+# ===== 일회성 실험·튜닝·발표자료 도구 (로컬 보관) =====
+# 값을 한 번 정하거나 그림 한 장을 뽑는 데 쓴 도구들이다. 결과는 이미
+# scene_config.py와 README에 반영돼 있어서, 파이프라인을 돌리는 데는 필요 없다.
+# cam_tune.py                    오버헤드 카메라 값 잡기 (GUI) -> scene_config.OVER_*
+# cam_occlusion_compare.py       천장 수직뷰 vs 경사뷰 가림 비교 (PPT 캡처)
+# show_eval_positions.py         평가 좌표 나열/산점도 (보고서용)
+# plot_sweep.py                  체크포인트별 성공률 곡선
+# eval_sweep.sh                  체크포인트 스윕 실행 (plot_sweep.py와 짝)
+# fix_checkpoint_for_isaacsim.py lerobot 0.6.1 체크포인트를 0.4.4가 읽게 하는 패치
+cam_tune.py
+cam_occlusion_compare.py
+show_eval_positions.py
+plot_sweep.py
+eval_sweep.sh
+fix_checkpoint_for_isaacsim.py
