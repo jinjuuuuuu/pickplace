@@ -66,7 +66,12 @@ OVER_ROTATE = (40.0, 0.0, 89.99)
 #
 # 미충돌(하늘/far plane 밖) 픽셀은 0으로 저장한다. make_control.py가 범위를
 # 계산할 때 (a > 0) 으로 걸러내는 값이라, 새 규약을 만들지 않고 그쪽에 맞춘다.
-RECORD_DEPTH_CAMS = ("over",)   # transfer할 뷰만. ("over", "wrist") 로 늘릴 수 있다
+# 둘 다 담는다. 실제로 transfer할 뷰는 나중에 골라도 되지만, 재수집은 몇 시간이
+# 걸리고 디스크는 싸다. over만 증강하면 wrist는 시뮬레이터 그림 그대로 남아
+# 도메인 갭이 절반만 닫히는데, 그 판단을 지금 확정할 필요가 없다.
+# uint16 mm 기준 비압축 164MB/에피소드/카메라 -> 70 에피소드 x 2대 = 23GB
+# (npz 압축 후 훨씬 작다. depth는 매끈해서 잘 줄어든다.)
+RECORD_DEPTH_CAMS = ("over", "wrist")
 DEPTH_UNIT_PER_M = 1000.0       # 1 = 1mm
 DEPTH_CLIP_MAX_M = 65.0         # uint16 상한(65.535m) 안쪽으로 자른다
 
