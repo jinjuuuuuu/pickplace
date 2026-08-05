@@ -38,6 +38,7 @@ from scene_config import (
     TARGET_FIXED_XY, TARGET_JITTER, CUBE_X_RANGE, CUBE_Y_RANGE, MIN_DISTANCE,
     START_POSE, SUCCESS_XY_TOL, SUCCESS_MIN_LIFT, NUM_EPISODES,
     GRIPPER_CLOSED, GRIPPER_OPEN, GRIPPER_CLOSING_RAW_THRESH,
+    RECORD_DEPTH_CAMS, DEPTH_UNIT_PER_M, DEPTH_CLIP_MAX_M,
 )
 
 MAX_STEPS       = 2000
@@ -60,6 +61,11 @@ RETREAT_LIFT_STEPS = 50
 RETREAT_HOME_STEPS = 100
 
 RECORD_IMAGES = True
+
+# 시뮬레이터 ground-truth depth를 같이 저장한다 (Cosmos3 transfer의 control 입력).
+# 정책 학습에는 안 쓰이므로 끄면 v11과 완전히 같은 데이터가 나온다. 어느 카메라를
+# 담을지는 scene_config.RECORD_DEPTH_CAMS.
+RECORD_DEPTH = True
 
 ENABLE_SMOOTHNESS_FILTER = True
 MAX_JOINT_STEP_JUMP      = 0.30
@@ -253,6 +259,42 @@ def grab_rgb(cam):
     except Exception as e:
         return np.zeros((IMG_H, IMG_W, 3), dtype=np.uint8)
 
+# 이름 -> Camera 객체. depth는 transfer할 뷰만 담으면 되므로 이름으로 고른다.
+_depth_cams = {"wrist": _wrist_cam, "over": _over_cam}
+
+def grab_depth(cam):
+    """(H,W) uint16 z-depth(밀리미터). annotator가 아직 없으면 0으로 채운다.
+
+    distance_to_image_plane(카메라 평면까지의 수직거리)을 쓴다. distance_to_camera는
+    광선거리라 화면 가장자리에서 값이 부풀고, 그걸 depth map으로 넘기면 평평한
+    테이블이 휘어서 생성된다.
+
+    미충돌(하늘/far plane 밖) 픽셀은 0으로 남긴다. 큰 값으로 밀어 두면 make_control.py가
+    퍼센타일로 범위를 잡을 때 하늘이 범위를 다 먹어서 정작 테이블·큐브의 깊이 차이가
+    한두 계조로 뭉개진다. 0은 그쪽이 이미 (a > 0)으로 걸러내는 값이다.
+    """
+    if cam is None:
+        return np.zeros((IMG_H, IMG_W), dtype=np.uint16)
+    try:
+        d = cam.get_depth()
+        if d is None:
+            return np.zeros((IMG_H, IMG_W), dtype=np.uint16)
+        d = np.asarray(d, dtype=np.float32)
+        if d.ndim == 3:
+            d = d[..., 0]
+        if d.shape != (IMG_H, IMG_W):
+            # annotator 문서에 축 순서가 (width, height)로 적혀 있어 빌드마다 다르게
+            # 나올 수 있다. 뒤집힌 경우만 살리고 그 외 크기는 잘못된 값이라 버린다.
+            if d.shape == (IMG_W, IMG_H):
+                d = d.T
+            else:
+                return np.zeros((IMG_H, IMG_W), dtype=np.uint16)
+        d = np.nan_to_num(d, nan=0.0, posinf=0.0, neginf=0.0)
+        d = np.clip(d, 0.0, DEPTH_CLIP_MAX_M)
+        return (d * DEPTH_UNIT_PER_M).astype(np.uint16)
+    except Exception:
+        return np.zeros((IMG_H, IMG_W), dtype=np.uint16)
+
 stage = omni.usd.get_context().get_stage()
 dome_light = UsdLux.DomeLight.Define(stage, "/World/DR_DomeLight")
 cube_material = cube.get_applied_visual_material()
@@ -294,8 +336,28 @@ for ep in range(N_TO_COLLECT):
 
     if RECORD_IMAGES and not _cams_inited:
         _wrist_cam.initialize(); _over_cam.initialize()
+        # annotator는 initialize()가 render product를 만든 뒤에만 붙는다
+        # (attach_annotator가 _render_product_path를 참조한다). 순서를 뒤집으면
+        # 예외 없이 조용히 실패해서 depth가 70 에피소드 내내 0으로 저장된다.
+        if RECORD_DEPTH:
+            for cn in RECORD_DEPTH_CAMS:
+                _depth_cams[cn].add_distance_to_image_plane_to_frame()
         for _ in range(15): world.step(render=RENDER)
         _cams_inited = True
+
+        # 3시간 돌린 뒤에 전부 0인 걸 발견하는 대신 여기서 즉시 죽는다.
+        if RECORD_DEPTH:
+            for cn in RECORD_DEPTH_CAMS:
+                probe = grab_depth(_depth_cams[cn])
+                if not (probe > 0).any():
+                    print(f"[collect] 치명적: {cn} depth가 전부 0이다. annotator가 "
+                          f"붙지 않았거나 워밍업이 부족하다 - 워밍업 스텝을 늘리거나 "
+                          f"RECORD_DEPTH=False로 두고 진행할 것.")
+                    import omni.replicator.core as rep
+                    rep.orchestrator.stop(); simulation_app.close(); sys.exit(1)
+                valid = probe[probe > 0]
+                print(f"[collect]   depth {cn}: {int(valid.min())}~{int(probe.max())}mm, "
+                      f"유효 픽셀 {100.0 * (probe > 0).mean():.0f}%")
 
     randomize_domain()
 
@@ -319,6 +381,7 @@ for ep in range(N_TO_COLLECT):
     controller = PickPlaceController(name="pick_place_controller", gripper=franka.gripper, robot_articulation=franka)
 
     ep_obs, ep_actions, ep_wrist, ep_over = [], [], [], []
+    ep_depth = {cn: [] for cn in RECORD_DEPTH_CAMS}
     skipped_ep = max_cube_z = max_joint_jump = max_joint_vel = ee_path_xy = 0
     # 컨트롤러가 '닫을 때' 로봇에 실제로 주는 원본 값. 라벨(GRIPPER_CLOSED)이
     # 이 값과 크게 다르면 v10과 같은 실패가 재발하므로 매 에피소드 찍어서 감시한다.
@@ -366,6 +429,9 @@ for ep in range(N_TO_COLLECT):
             if RECORD_IMAGES:
                 ep_wrist.append(grab_rgb(_wrist_cam))
                 ep_over.append(grab_rgb(_over_cam))
+            if RECORD_DEPTH:
+                for cn in RECORD_DEPTH_CAMS:
+                    ep_depth[cn].append(grab_depth(_depth_cams[cn]))
         else: skipped_ep += 1
 
         # 원본 액션 그대로 시뮬레이터에 적용 (물리 엔진 평화 유지)
@@ -406,6 +472,9 @@ for ep in range(N_TO_COLLECT):
                     if RECORD_IMAGES:
                         ep_wrist.append(grab_rgb(_wrist_cam))
                         ep_over.append(grab_rgb(_over_cam))
+                    if RECORD_DEPTH:
+                        for cn in RECORD_DEPTH_CAMS:
+                            ep_depth[cn].append(grab_depth(_depth_cams[cn]))
                 franka.apply_action(ArticulationAction(joint_positions=clean_cmd))
                 world.step(render=RENDER)
 
@@ -437,6 +506,12 @@ for ep in range(N_TO_COLLECT):
     if RECORD_IMAGES:
         save_data["images_wrist"] = np.array(ep_wrist, dtype=np.uint8)
         save_data["images_over"]  = np.array(ep_over,  dtype=np.uint8)
+    if RECORD_DEPTH:
+        # depth_<cam>: (T,H,W) uint16 밀리미터. 단위와 미충돌 규약은 scene_config 참고.
+        # RGB와 프레임 인덱스가 정확히 같아야 한다 - control 비디오가 액션 라벨과
+        # 어긋나면 증강 데이터가 전부 쓸모없어진다.
+        for cn in RECORD_DEPTH_CAMS:
+            save_data[f"depth_{cn}"] = np.array(ep_depth[cn], dtype=np.uint16)
     ep_save_path = os.path.join(SAVE_PATH, f"episode_{ep + SAVE_INDEX_OFFSET:04d}.npz")
     np.savez_compressed(ep_save_path, **save_data)
 

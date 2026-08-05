@@ -52,6 +52,24 @@ OVER_FOCAL = 60.0
 OVER_TRANSLATE = (2.0, 0.0, 2.0)
 OVER_ROTATE = (40.0, 0.0, 89.99)
 
+# === Depth (Cosmos transfer의 control 입력용) ================================
+# 정책은 depth를 쓰지 않는다. 이건 순전히 Cosmos3 transfer가 기하 구조를 잡는 데
+# 쓰는 control 신호다. RGB에서 추정(Video Depth Anything 등)하는 대신 시뮬레이터의
+# ground truth를 그대로 받아 쓴다 - 추정 오차가 없고 공짜다.
+#
+# 왜 uint16 밀리미터인가
+#   float32 그대로면 240x320x4B x 1067프레임 = 328MB/에피소드, 70개면 23GB다.
+#   8bit로 줄이면서 프레임별로 정규화하는 건 최악의 선택이다: 깊이 스케일이
+#   프레임마다 움직여서 생성 영상이 깜빡인다(make_control.py 19-24줄 참고).
+#   mm 정수는 절대 스케일을 유지하면서 절반 크기이고, 16bit PNG로 그대로 나가서
+#   make_control.py --mode depth 가 손대지 않고 읽는다.
+#
+# 미충돌(하늘/far plane 밖) 픽셀은 0으로 저장한다. make_control.py가 범위를
+# 계산할 때 (a > 0) 으로 걸러내는 값이라, 새 규약을 만들지 않고 그쪽에 맞춘다.
+RECORD_DEPTH_CAMS = ("over",)   # transfer할 뷰만. ("over", "wrist") 로 늘릴 수 있다
+DEPTH_UNIT_PER_M = 1000.0       # 1 = 1mm
+DEPTH_CLIP_MAX_M = 65.0         # uint16 상한(65.535m) 안쪽으로 자른다
+
 # === 조명 / 물체 ============================================================
 LIGHT_INTENSITY = 1500.0        # 수집·평가가 같아야 한다 (한 번 어긋나서 0% 났음)
 CUBE_COLOR = (0.8, 0.2, 0.1)
