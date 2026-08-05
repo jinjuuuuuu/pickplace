@@ -44,7 +44,12 @@ from scene_config import (
 MAX_STEPS       = 2000
 HEADLESS        = True
 RENDER          = True
-SAVE_PATH       = r"/data/jinju/bc_data_v11"
+# v11이 아니라 v12에 담는다. 이어받기(build_resume_plan)가 기존 episode_*.npz
+# 개수를 세므로 v11에 그대로 쓰면 (a) 이미 70개가 있어 한 개도 안 모으거나
+# (b) depth 있는 에피소드와 없는 에피소드가 한 폴더에 섞인다. 후자는
+# export_depth_control.py 가 옛 파일에서 죽고, 섞인 걸 모르고 학습하면
+# 증강분만 depth가 있는 이상한 데이터셋이 된다.
+SAVE_PATH       = r"/data/jinju/bc_data_v12"
 
 PLACE_Z_OFFSET  = 0.02
 WARMUP_STEPS    = 200
